@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI NPC Conversation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="conversation-container" class="hidden">
+        <div class="conversation-header">
+            <h2 id="npc-name">NPC Name</h2>
+            <span id="npc-role" class="role-badge">Role</span>
+            <button id="close-btn" class="close-button">&times;</button>
+        </div>
+
+        <div id="conversation-messages" class="messages-container">
+            <!-- Messages will be added here dynamically -->
+        </div>
+
+        <div class="input-container">
+            <input type="text" id="message-input" placeholder="Type your message..." maxlength="500">
+            <button id="send-btn" class="send-button">Send</button>
+        </div>
+
+        <div class="conversation-footer">
+            <button id="end-conversation-btn" class="end-button">End Conversation</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

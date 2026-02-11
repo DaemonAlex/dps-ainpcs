@@ -1,0 +1,27 @@
+# Audio cache
+audio/*.ogg
+audio/*.mp3
+audio/*.wav
+
+# Config with API keys - DO NOT COMMIT!
+config.lua
+config.local.lua
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Node modules (if any)
+node_modules/
+
+# Temp files
+*.tmp
+*.temp
+*.cache
