@@ -229,7 +229,7 @@ function SetGlobalMoodEvent(eventName, modifier, duration)
         end)
     end
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Global mood event: %s (%+d) for %ds"):format(eventName, modifier, duration or 0))
     end
 end

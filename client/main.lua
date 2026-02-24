@@ -151,7 +151,7 @@ function CreateNPC(npcData)
     end
 
     -- Final ground snap fallback: place ped on ground properly
-    PlaceOnGroundProperly(npc)
+    PlaceObjectOnGroundProperly(npc)
 
     -- Configure NPC base properties
     SetEntityInvincible(npc, true)
@@ -315,6 +315,12 @@ function StartMovementSystem()
                 local entity = npcInfo.entity
 
                 if not DoesEntityExist(entity) then
+                    -- Entity was culled/streamed out — clean up blip and respawn later
+                    if npcInfo.blip then
+                        RemoveBlip(npcInfo.blip)
+                    end
+                    spawnedNPCs[npcId] = nil
+                    ScheduleNPCSpawn(npcData)
                     goto continue
                 end
 
@@ -323,6 +329,11 @@ function StartMovementSystem()
                 local distance = #(playerCoords - npcCoords)
                 if distance < nearestDistance then
                     nearestDistance = distance
+                end
+
+                -- Keep blip synced with NPC position (for wander/patrol movement)
+                if npcInfo.blip then
+                    SetBlipCoords(npcInfo.blip, npcCoords.x, npcCoords.y, npcCoords.z)
                 end
 
                 -- Check if NPC should still be available

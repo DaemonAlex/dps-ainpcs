@@ -95,7 +95,7 @@ function RecordPlayerAction(citizenid, actionType, details)
     -- Clear cache for this player
     rumorCache[citizenid] = nil
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Recorded action: %s did %s (heat: %d, visibility: %s)"):format(
             citizenid, actionType, heatLevel, visibility
         ))
@@ -226,7 +226,7 @@ CreateThread(function()
             WHERE heat_level > 0
         ]])
 
-        if Config.Debug.enabled then
+        if Config.Debug and Config.Debug.enabled then
             print("[AI NPCs] Decayed rumor heat levels")
         end
     end

@@ -201,6 +201,27 @@ body {
     border-top: 1px solid rgba(255, 143, 6, 0.1);
     display: flex;
     justify-content: center;
+    gap: 10px;
+}
+
+.payment-button {
+    padding: 8px 20px;
+    background: rgba(46, 196, 134, 0.1);
+    border: 1px solid rgba(46, 196, 134, 0.3);
+    border-radius: 20px;
+    color: #2ec486;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.payment-button:hover {
+    color: #fffffe;
+    border-color: #2ec486;
+    background: rgba(46, 196, 134, 0.2);
 }
 
 .end-button {

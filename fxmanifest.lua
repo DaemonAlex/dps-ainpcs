@@ -1,7 +1,7 @@
 fx_version 'cerulean'
 game 'gta5'
 
-name 'ai-npcs'
+name 'dps-ainpcs'
 author 'DaemonAlex'
 description 'AI-powered NPC conversation system with trust, quests, and intel'
 version '2.5.0'

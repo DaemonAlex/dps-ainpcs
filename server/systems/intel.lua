@@ -127,7 +127,7 @@ function CreateIntel(npcId, intelType, details, options)
 
     local intelConfig = INTEL_TYPES[intelType]
     if not intelConfig then
-        if Config.Debug.enabled then
+        if Config.Debug and Config.Debug.enabled then
             print(("[AI NPCs] Unknown intel type: %s"):format(intelType))
         end
         return nil
@@ -159,7 +159,7 @@ function CreateIntel(npcId, intelType, details, options)
         options.maxBuyers or 1
     })
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Intel created: %s (%s) by %s, expires in %d hours"):format(
             intelType, intelId, npcId, expiryHours
         ))
@@ -270,7 +270,7 @@ function PurchaseIntel(playerId, intelId)
     -- Parse intel details
     local details = json.decode(intel.details or "{}")
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Intel purchased: %s bought intel #%d from %s for $%d"):format(
             citizenid, intelId, intel.npc_id, intel.value
         ))
@@ -597,7 +597,7 @@ CreateThread(function()
             WHERE expires_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)
         ]])
 
-        if Config.Debug.enabled then
+        if Config.Debug and Config.Debug.enabled then
             print("[AI NPCs] Cleaned up expired intel")
         end
     end

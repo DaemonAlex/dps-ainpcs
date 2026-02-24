@@ -150,7 +150,7 @@ function AddFactionTrust(citizenid, faction, amount, reason)
         end
     end
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Faction trust: %s %s%d with %s -> %d (%s)"):format(
             citizenid, amount >= 0 and "+" or "", amount, faction, newValue, reputation
         ))

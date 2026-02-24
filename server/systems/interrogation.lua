@@ -165,14 +165,14 @@ function PerformInterrogation(playerId, npcId, method)
 
     -- Add memory to NPC
     if success then
-        exports['ai-npcs']:AddNPCMemoryAboutPlayer(playerId, npcId, 'negative',
+        exports['dps-ainpcs']:AddNPCMemoryAboutPlayer(playerId, npcId, 'negative',
             'Was interrogated by police and gave up information', 8, 30)
     else
-        exports['ai-npcs']:AddNPCMemoryAboutPlayer(playerId, npcId, 'negative',
+        exports['dps-ainpcs']:AddNPCMemoryAboutPlayer(playerId, npcId, 'negative',
             'Was interrogated by police but said nothing', 5, 14)
     end
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Interrogation: %s interrogated %s (%s) - %s (roll: %d, needed: %d)"):format(
             citizenid, npcId, method, success and "SUCCESS" or "FAILED", roll, successChance
         ))
@@ -219,7 +219,7 @@ function GenerateInterrogationIntel(npcId, npcData, broken)
     end
 
     -- Gang NPCs might reveal gang info
-    local faction = exports['ai-npcs']:GetNPCFaction(npcId)
+    local faction = exports['dps-ainpcs']:GetNPCFaction(npcId)
     if faction then
         -- Reveal some faction operations
         table.insert(intel, {
@@ -280,11 +280,11 @@ function HandleInterrogationRisk(playerId, npcId, npcData, method, riskLevel)
     end
 
     -- Gang retaliation for interrogating their members
-    local faction = exports['ai-npcs']:GetNPCFaction(npcId)
+    local faction = exports['dps-ainpcs']:GetNPCFaction(npcId)
     if faction and riskLevel >= 2 then
         local Player = QBCore.Functions.GetPlayer(playerId)
         if Player then
-            exports['ai-npcs']:AddFactionTrust(Player.PlayerData.citizenid, faction, -20, "interrogated_member")
+            exports['dps-ainpcs']:AddFactionTrust(Player.PlayerData.citizenid, faction, -20, "interrogated_member")
             table.insert(consequences, {
                 type = "faction_anger",
                 faction = faction,

@@ -112,7 +112,7 @@ function SendPhoneNotification(playerId, notification)
         duration = 10000
     })
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Sent notification to %s from %s: %s"):format(
             playerId, npcName, notification.title
         ))

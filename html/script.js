@@ -10,6 +10,7 @@ const messageInput = document.getElementById('message-input');
 const sendButton = document.getElementById('send-btn');
 const endButton = document.getElementById('end-conversation-btn');
 const closeButton = document.getElementById('close-btn');
+const paymentButton = document.getElementById('payment-btn');
 
 // Event Listeners
 messageInput.addEventListener('keypress', function(e) {
@@ -22,6 +23,7 @@ messageInput.addEventListener('keypress', function(e) {
 sendButton.addEventListener('click', sendMessage);
 endButton.addEventListener('click', endConversation);
 closeButton.addEventListener('click', closeConversation);
+paymentButton.addEventListener('click', offerPayment);
 
 // Prevent default browser behavior
 document.addEventListener('keydown', function(e) {
@@ -177,6 +179,19 @@ function setTyping(typing) {
             typingIndicator.remove();
         }
     }
+}
+
+// Offer payment to NPC
+function offerPayment() {
+    if (!conversationOpen) return;
+
+    fetch(`https://${GetParentResourceName()}/offerPayment`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+    });
 }
 
 // End conversation

@@ -211,7 +211,7 @@ function AddPlayerTrust(identifier, trustCategory, npcId, amount)
         value = newValue
     }
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Trust queued: %s -> %s (+%d) = %d"):format(
             identifier, npcId, amount, newValue
         ))
@@ -465,34 +465,6 @@ function GetNPCMemories(identifier, npcId, limit)
 end
 
 -----------------------------------------------------------
--- DATABASE: INTEL COOLDOWNS
------------------------------------------------------------
-
--- Check if intel is on cooldown
-function CanAccessIntel(identifier, topic, tier)
-    local cooldown = Config.Intel.cooldowns[tier] or 600000
-    local cooldownSeconds = cooldown / 1000
-
-    local result = MySQL.scalar.await([[
-        SELECT TIMESTAMPDIFF(SECOND, accessed_at, CURRENT_TIMESTAMP)
-        FROM ai_npc_intel_cooldowns
-        WHERE citizenid = ? AND topic = ?
-    ]], {identifier, topic})
-
-    if not result then return true end
-    return result >= cooldownSeconds
-end
-
--- Record intel access
-function RecordIntelAccess(identifier, topic, tier)
-    MySQL.insert.await([[
-        INSERT INTO ai_npc_intel_cooldowns (citizenid, topic, tier, accessed_at)
-        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-        ON DUPLICATE KEY UPDATE tier = ?, accessed_at = CURRENT_TIMESTAMP
-    ]], {identifier, topic, tier, tier})
-end
-
------------------------------------------------------------
 -- HELPER: Get NPC by ID
 -----------------------------------------------------------
 function GetNPCById(npcId)
@@ -550,6 +522,7 @@ function GetPlayerContext(playerId)
     if not Player then return nil end
 
     local context = {
+        citizenid = Player.PlayerData.citizenid,
         name = Player.PlayerData.charinfo.firstname .. " " .. Player.PlayerData.charinfo.lastname,
         job = Player.PlayerData.job.name,
         jobLabel = Player.PlayerData.job.label,
@@ -609,7 +582,7 @@ function GetPlayerContext(playerId)
         end
     end
 
-    if Config.Debug.printPlayerContext then
+    if Config.Debug and Config.Debug.printPlayerContext then
         print(("[AI NPCs] Player context for %s:"):format(playerId))
         print(json.encode(context, { indent = true }))
     end
@@ -943,18 +916,18 @@ if Config.Trust.enabled then
         while true do
             Wait(Config.Trust.decayCheckInterval)
 
-            for identifier, categories in pairs(playerTrust) do
+            for identifier, categories in pairs(playerTrustCache) do
                 for category, npcs in pairs(categories) do
                     for npcId, trust in pairs(npcs) do
                         -- Decay trust over time
                         local newTrust = math.max(0, trust - Config.Trust.decayRate)
-                        playerTrust[identifier][category][npcId] = newTrust
+                        playerTrustCache[identifier][category][npcId] = newTrust
                     end
                 end
             end
 
             print("[AI NPCs] Applied trust decay")
-            SaveTrustData()
+            FlushAllTrustUpdates()
         end
     end)
 end
@@ -1024,7 +997,7 @@ exports('OfferQuestToPlayer', function(playerId, npcId, questId, questType, ques
 
     -- Range validation (can be bypassed by server scripts with skipRangeCheck)
     if not skipRangeCheck and not IsPlayerNearNPC(playerId, npcId) then
-        if Config.Debug.enabled then
+        if Config.Debug and Config.Debug.enabled then
             print(("[AI NPCs] OfferQuest blocked: Player %s not near NPC %s"):format(playerId, npcId))
         end
         return false, "not_in_range"
@@ -1041,7 +1014,7 @@ exports('CompletePlayerQuest', function(playerId, npcId, questId, trustReward, s
 
     -- Range validation for quest completion (slightly larger range)
     if not skipRangeCheck and not IsPlayerInQuestRange(playerId, npcId) then
-        if Config.Debug.enabled then
+        if Config.Debug and Config.Debug.enabled then
             print(("[AI NPCs] CompleteQuest blocked: Player %s not near NPC %s"):format(playerId, npcId))
         end
         return false, "not_in_range"
@@ -1067,7 +1040,7 @@ exports('CreatePlayerReferral', function(playerId, fromNpcId, toNpcId, referralT
 
     -- Must be near the NPC giving the referral
     if not skipRangeCheck and not IsPlayerNearNPC(playerId, fromNpcId) then
-        if Config.Debug.enabled then
+        if Config.Debug and Config.Debug.enabled then
             print(("[AI NPCs] CreateReferral blocked: Player %s not near NPC %s"):format(playerId, fromNpcId))
         end
         return false, "not_in_range"

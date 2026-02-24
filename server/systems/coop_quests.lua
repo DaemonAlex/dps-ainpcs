@@ -48,7 +48,7 @@ function CreateCoopQuest(leaderCitizenid, npcId, questId, questType, questData)
         createdAt = os.time()
     }
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Co-op quest created: %s by %s"):format(fullQuestId, leaderCitizenid))
     end
 
@@ -103,7 +103,7 @@ function JoinCoopQuest(questId, citizenid, role)
         })
     end
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] %s joined co-op quest %s as %s"):format(citizenid, questId, role))
     end
 
@@ -201,7 +201,7 @@ function StartCoopQuest(questId, leaderCitizenid)
         end
     end
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Co-op quest started: %s with %d members"):format(questId, memberCount))
     end
 
@@ -264,7 +264,7 @@ function CompleteCoopQuest(questId, success)
 
             -- Award trust
             if quest.npcId then
-                exports['ai-npcs']:AddPlayerTrustWithNPC(
+                exports['dps-ainpcs']:AddPlayerTrustWithNPC(
                     Player and Player.PlayerData.source or 0,
                     quest.npcId,
                     trustReward
@@ -299,7 +299,7 @@ function CompleteCoopQuest(questId, success)
     -- Clean up
     activeCoopQuests[questId] = nil
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Co-op quest %s: %s"):format(status, questId))
     end
 

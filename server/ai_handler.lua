@@ -244,7 +244,7 @@ function ProcessRequestQueue()
             end
         end
 
-        if Config.Debug.enabled then
+        if Config.Debug and Config.Debug.enabled then
             print(("[AI NPCs] All players rate-limited, waiting %dms for token refill"):format(minWait))
         end
 
@@ -266,7 +266,7 @@ function ProcessRequestQueue()
     lastRequestTime = currentTime
     currentConcurrent = currentConcurrent + 1
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Processing request for player %s (%d tokens remaining)"):format(
             request.playerId, GetTokensRemaining(request.playerId)))
     end
@@ -551,7 +551,7 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
                     GenerateTTS(playerId, aiResponse, npc.voice or Config.TTS.defaultVoice, npc.id, isNetworked)
                 end
 
-                if Config.Debug.printResponses then
+                if Config.Debug and Config.Debug.printResponses then
                     print(("[AI NPCs] %s says: %s"):format(npc.name, aiResponse:sub(1, 80) .. "..."))
                 end
             else
@@ -612,8 +612,8 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
     -- V2.5: NPC MOOD CONTEXT
     -- ===========================================
     local moodContext, moodEffects = "", nil
-    if exports['ai-npcs'].BuildMoodContext then
-        moodContext, moodEffects = exports['ai-npcs']:BuildMoodContext(npc.id, npc)
+    if exports['dps-ainpcs'].BuildMoodContext then
+        moodContext, moodEffects = exports['dps-ainpcs']:BuildMoodContext(npc.id, npc)
         if moodContext and moodContext ~= "" then
             prompt = prompt .. moodContext .. "\n"
         end
@@ -622,8 +622,8 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
     -- ===========================================
     -- V2.5: FACTION TRUST CONTEXT
     -- ===========================================
-    if exports['ai-npcs'].BuildFactionContext and citizenid then
-        local factionContext = exports['ai-npcs']:BuildFactionContext(npc.id, citizenid, playerContext.name)
+    if exports['dps-ainpcs'].BuildFactionContext and citizenid then
+        local factionContext = exports['dps-ainpcs']:BuildFactionContext(npc.id, citizenid, playerContext.name)
         if factionContext and factionContext ~= "" then
             prompt = prompt .. factionContext .. "\n"
         end
@@ -632,8 +632,8 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
     -- ===========================================
     -- V2.5: RUMOR MILL CONTEXT
     -- ===========================================
-    if exports['ai-npcs'].BuildRumorContext and citizenid then
-        local rumorContext = exports['ai-npcs']:BuildRumorContext(npc.id, citizenid, npc)
+    if exports['dps-ainpcs'].BuildRumorContext and citizenid then
+        local rumorContext = exports['dps-ainpcs']:BuildRumorContext(npc.id, citizenid, npc)
         if rumorContext and rumorContext ~= "" then
             prompt = prompt .. rumorContext .. "\n"
         end
@@ -642,8 +642,8 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
     -- ===========================================
     -- V2.5: INTEL CONTEXT (what you can offer)
     -- ===========================================
-    if exports['ai-npcs'].BuildIntelContext and citizenid then
-        local intelContext = exports['ai-npcs']:BuildIntelContext(npc.id, citizenid)
+    if exports['dps-ainpcs'].BuildIntelContext and citizenid then
+        local intelContext = exports['dps-ainpcs']:BuildIntelContext(npc.id, citizenid)
         if intelContext and intelContext ~= "" then
             prompt = prompt .. intelContext .. "\n"
         end
@@ -793,7 +793,7 @@ function GenerateTTS(playerId, text, voiceId, npcId, isNetworked)
         voiceData.audioFile = cachedFile
         voiceData.cached = true
         TriggerClientEvent('ai-npcs:client:playVoice', playerId, voiceData)
-        if Config.Debug.enabled then
+        if Config.Debug and Config.Debug.enabled then
             print(("[AI NPCs] TTS cache hit: %s"):format(cachedFile))
         end
         return
@@ -845,12 +845,12 @@ function GenerateTTS(playerId, text, voiceId, npcId, isNetworked)
                     TriggerClientEvent('ai-npcs:client:playVoiceNearby', -1, playerId, voiceData)
                 end
 
-                if Config.Debug.enabled then
+                if Config.Debug and Config.Debug.enabled then
                     print(("[AI NPCs] Generated TTS audio: %s (cached)"):format(fileName))
                 end
             end
         else
-            if Config.Debug.enabled then
+            if Config.Debug and Config.Debug.enabled then
                 print(("[AI NPCs] TTS request failed with status: %s"):format(statusCode))
             end
             -- Fallback: trigger voice event without audio (client can handle gracefully)
@@ -874,7 +874,7 @@ function CleanAudioCache()
         count = count + 1
     end
 
-    if Config.Debug.enabled then
+    if Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Cleaned %d cached audio files"):format(count))
     end
 end
