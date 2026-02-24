@@ -35,7 +35,7 @@ document.addEventListener('keydown', function(e) {
 
         // Prevent other keys when conversation is open
         if (e.key === 'Escape') {
-            closeConversation();
+            endConversation();
         }
         e.preventDefault();
     }
@@ -62,7 +62,7 @@ window.addEventListener('message', function(event) {
 function openConversation(npcName, npcRole) {
     conversationOpen = true;
     npcNameElement.textContent = npcName;
-    npcRoleElement.textContent = npcRole.replace('_', ' ').toUpperCase();
+    npcRoleElement.textContent = npcRole.replace(/_/g, ' ').toUpperCase();
 
     // Clear previous messages
     messagesContainer.innerHTML = '';
@@ -78,22 +78,28 @@ function openConversation(npcName, npcRole) {
     console.log(`[AI NPCs] Opened conversation with ${npcName}`);
 }
 
-// Close conversation UI
+// Close conversation UI (visual only - called by endConversation or server message)
 function closeConversation() {
     conversationOpen = false;
+    isTyping = false;
+    sendButton.disabled = false;
     conversationContainer.classList.add('hidden');
 
     // Clear input
     messageInput.value = '';
 
-    // Notify client
+    // Remove any leftover typing indicator
+    const typingIndicator = document.getElementById('typing-indicator');
+    if (typingIndicator) typingIndicator.remove();
+
+    // Notify client to release NUI focus
     fetch(`https://${GetParentResourceName()}/closeUI`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({})
-    });
+    }).catch(err => console.error('[AI NPCs] closeUI error:', err));
 
     console.log('[AI NPCs] Closed conversation UI');
 }
@@ -128,6 +134,9 @@ function sendMessage() {
             console.error('[AI NPCs] Failed to send message');
             setTyping(false);
         }
+    }).catch(err => {
+        console.error('[AI NPCs] sendMessage error:', err);
+        setTyping(false);
     });
 }
 
@@ -191,20 +200,23 @@ function offerPayment() {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({})
-    });
+    }).catch(err => console.error('[AI NPCs] offerPayment error:', err));
 }
 
-// End conversation
+// End conversation (proper cleanup - tells server to unlock NPC, then closes UI)
 function endConversation() {
+    if (!conversationOpen) return;
+
     fetch(`https://${GetParentResourceName()}/endConversation`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({})
-    });
+    }).catch(err => console.error('[AI NPCs] endConversation error:', err));
 
-    closeConversation();
+    // endConversation NUI callback in Lua calls EndConversation() which sends
+    // closeConversation message back to NUI, so we don't call closeConversation() here
 }
 
 // Utility function to get resource name

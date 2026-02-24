@@ -235,7 +235,7 @@ function FlushTrustForPlayer(identifier)
             savedCount = savedCount + 1
         end
     end
-    if savedCount > 0 and Config.Debug.enabled then
+    if savedCount > 0 and Config.Debug and Config.Debug.enabled then
         print(("[AI NPCs] Flushed %d trust updates for %s"):format(savedCount, identifier))
     end
 end
@@ -768,6 +768,7 @@ RegisterNetEvent('ai-npcs:server:sendMessage', function(message, paymentOffer)
     if conversation.messageCount > Config.Interaction.maxConversationLength then
         local endMsg = "I've said enough. Come back another time..."
         TriggerClientEvent('ai-npcs:client:endConversation', src, endMsg)
+        UnlockNPC(conversation.npcId, src)
         activeConversations[src] = nil
         return
     end
@@ -901,6 +902,7 @@ CreateThread(function()
             if currentTime - conversation.lastActivity > Config.Interaction.idleTimeout then
                 TriggerClientEvent('ai-npcs:client:endConversation', playerId,
                     "Looks like you've got other things on your mind... We'll talk later.")
+                UnlockNPC(conversation.npcId, playerId)
                 activeConversations[playerId] = nil
                 print(("[AI NPCs] Auto-ended idle conversation for player %s"):format(playerId))
             end
@@ -916,18 +918,17 @@ if Config.Trust.enabled then
         while true do
             Wait(Config.Trust.decayCheckInterval)
 
-            for identifier, categories in pairs(playerTrustCache) do
-                for category, npcs in pairs(categories) do
-                    for npcId, trust in pairs(npcs) do
-                        -- Decay trust over time
-                        local newTrust = math.max(0, trust - Config.Trust.decayRate)
-                        playerTrustCache[identifier][category][npcId] = newTrust
-                    end
-                end
-            end
+            -- Decay trust directly in database for all players (not just cached ones)
+            MySQL.update([[
+                UPDATE ai_npc_trust
+                SET trust_value = GREATEST(0, trust_value - ?)
+                WHERE trust_value > 0
+            ]], {Config.Trust.decayRate})
+
+            -- Clear cache so next lookups get fresh values
+            playerTrustCache = {}
 
             print("[AI NPCs] Applied trust decay")
-            FlushAllTrustUpdates()
         end
     end)
 end

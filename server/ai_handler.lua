@@ -728,7 +728,7 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
     -- Reminder about format
     prompt = prompt .. "\n=== RESPONSE GUIDELINES ===\n"
     prompt = prompt .. "- Stay in character at all times\n"
-    prompt = prompt .. "- Keep responses under 100 words\n"
+    prompt = prompt .. "- Keep responses concise and in-character\n"
     prompt = prompt .. "- Use appropriate actions in *asterisks*\n"
     prompt = prompt .. "- If they haven't paid enough for information, hint at needing payment\n"
     prompt = prompt .. "- If they're a cop, stick to your cover story\n"

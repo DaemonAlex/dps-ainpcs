@@ -6,6 +6,7 @@ audio/*.wav
 # Config with API keys - DO NOT COMMIT!
 config.lua
 config.local.lua
+server/config_secrets.lua
 
 # Logs
 *.log

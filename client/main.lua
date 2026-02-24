@@ -137,8 +137,15 @@ function CreateNPC(npcData)
     if not spawnCoords then return end
 
     RequestModel(npcData.model)
-    while not HasModelLoaded(npcData.model) do
-        Wait(1)
+    local modelTimeout = 0
+    while not HasModelLoaded(npcData.model) and modelTimeout < 5000 do
+        Wait(10)
+        modelTimeout = modelTimeout + 10
+    end
+
+    if not HasModelLoaded(npcData.model) then
+        print(("[AI NPCs] ^1Failed to load model for NPC: %s (%s)^7"):format(npcData.name, npcData.model))
+        return
     end
 
     local npc = CreatePed(4, npcData.model, spawnCoords.x, spawnCoords.y, spawnCoords.z, spawnCoords.w, false, true)
@@ -173,6 +180,9 @@ function CreateNPC(npcData)
         FreezeEntityPosition(npc, true)
         SetPedCanPlayAmbientAnims(npc, true)
     end
+
+    -- Release model from memory (entity keeps its own reference)
+    SetModelAsNoLongerNeeded(npcData.model)
 
     -- Store NPC data
     spawnedNPCs[npcData.id] = {
@@ -980,6 +990,81 @@ end)
 
 RegisterNetEvent('ai-npcs:client:endConversation', function(reason)
     EndConversation(reason)
+end)
+
+-----------------------------------------------------------
+-- V2.5 SYSTEM EVENT HANDLERS
+-----------------------------------------------------------
+RegisterNetEvent('ai-npcs:client:intelReceived', function(intelData)
+    if not intelData then return end
+    exports['ox_lib']:notify({
+        title = 'Intel Received',
+        description = intelData.title or 'New intelligence acquired',
+        type = 'success',
+        duration = 8000
+    })
+end)
+
+RegisterNetEvent('ai-npcs:client:showIntelList', function(intelList)
+    if not intelList or #intelList == 0 then
+        exports['ox_lib']:notify({
+            title = 'Intel',
+            description = 'No intel available from this contact',
+            type = 'info'
+        })
+        return
+    end
+
+    local options = {}
+    for _, intel in ipairs(intelList) do
+        table.insert(options, {
+            title = intel.title or 'Unknown Intel',
+            description = string.format("Tier: %s | Price: $%d", intel.tier or '?', intel.price or 0),
+            metadata = { {label = 'Topic', value = intel.topic or 'N/A'} }
+        })
+    end
+
+    lib.registerContext({
+        id = 'ai_npc_intel_list',
+        title = 'Available Intel',
+        options = options
+    })
+    lib.showContext('ai_npc_intel_list')
+end)
+
+RegisterNetEvent('ai-npcs:client:coopQuestStarted', function(questData)
+    if not questData then return end
+    exports['ox_lib']:notify({
+        title = 'Co-op Quest Started',
+        description = questData.title or 'A new job has begun',
+        type = 'success',
+        duration = 10000
+    })
+end)
+
+RegisterNetEvent('ai-npcs:client:coopQuestInvite', function(questData)
+    if not questData then return end
+    local alert = lib.alertDialog({
+        header = 'Quest Invitation',
+        content = string.format("You've been invited to: **%s**\n\nAccept?", questData.title or 'Unknown Quest'),
+        centered = true,
+        cancel = true
+    })
+
+    if alert == 'confirm' then
+        TriggerServerEvent('ai-npcs:server:acceptCoopInvite', questData.questId)
+    end
+end)
+
+RegisterNetEvent('ai-npcs:client:interrogationResult', function(resultData)
+    if not resultData then return end
+    local notifType = resultData.success and 'success' or 'error'
+    exports['ox_lib']:notify({
+        title = resultData.success and 'Interrogation Success' or 'Interrogation Failed',
+        description = resultData.message or (resultData.success and 'They talked.' or 'They didn\'t crack.'),
+        type = notifType,
+        duration = 8000
+    })
 end)
 
 -----------------------------------------------------------

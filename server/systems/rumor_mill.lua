@@ -257,7 +257,7 @@ function BuildRumorContext(npcId, citizenid, npcData)
     end
 
     -- Get player name for formatting
-    local Player = exports['qb-core']:GetCoreObject().Functions.GetPlayerByCitizenId(citizenid)
+    local Player = QBCore.Functions.GetPlayerByCitizenId(citizenid)
     local playerName = Player and Player.PlayerData.charinfo.firstname or "this person"
 
     -- Format rumors

@@ -19,6 +19,7 @@ client_scripts {
 
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
+    'server/config_secrets.lua',  -- Server-only API keys (not sent to clients)
     'server/main.lua',
     'server/ai_handler.lua',
     -- v2.5 Systems
@@ -124,5 +125,13 @@ exports {
 
     -- Memories
     'AddNPCMemoryAboutPlayer',
-    'GetNPCMemoriesAboutPlayer'
+    'GetNPCMemoriesAboutPlayer',
+
+    -- Discord Logging
+    'LogConversation',
+    'LogTrustChange',
+    'LogIntelPurchase',
+    'LogQuestCompletion',
+    'LogError',
+    'FlushLogs'
 }

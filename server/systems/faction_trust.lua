@@ -9,25 +9,32 @@ local QBCore = exports['qb-core']:GetCoreObject()
 local factionTrustCache = {}  -- { [citizenid] = { [faction] = data } }
 
 -- Define which NPCs belong to which factions
+-- NOTE: IDs must match the 'id' field in Config.NPCs exactly
 local npcFactions = {
     -- Gangs
-    vagos = {"el_guapo", "vagos_dealer", "vagos_lieutenant"},
-    ballas = {"purple_k", "ballas_og", "ballas_dealer"},
-    families = {"big_smoke_jr", "families_og", "grove_dealer"},
-    lost_mc = {"chains", "lost_prospect", "lost_dealer"},
+    vagos = {"vagos_contact", "vagos_dealer", "vagos_lieutenant"},
+    ballas = {"ballas_contact", "ballas_og", "ballas_dealer"},
+    families = {"families_contact", "families_og", "grove_dealer"},
+    lost_mc = {"lost_mc_contact", "lost_prospect", "lost_dealer"},
 
     -- Criminal orgs
-    cartel = {"rico", "cartel_soldier", "cartel_boss"},
-    mafia = {"the_architect", "charlie_fence", "viktor"},
-    triads = {"triad_boss", "triad_enforcer"},
+    cartel = {"coke_connect_vinewood", "hector_cartel_enforcer", "cartel_boss"},
+    mafia = {"heist_planner_lester", "fence_chamberlain", "arms_dealer_docks"},
+    triads = {"triads_sandy", "triad_enforcer"},
 
     -- Legitimate
-    legal = {"margaret_chen", "vanessa_sterling", "captain_marcus"},
-    medical = {"dr_hartman", "nurse_jackie"},
-    law = {"attorney_goldstein"},
+    legal = {"career_counselor_cityhall", "realtor_downtown", "pilot_lsia"},
+    medical = {"doc_pillbox"},
+    law = {"lawyer_downtown"},
 
     -- Underground network
-    underground = {"sketchy_mike", "smokey", "walter", "crazy_earl", "jackie"},
+    underground = {"informant_yellowjack", "weed_connect_grove", "meth_cook_sandy", "homeless_sage", "bartender_bahama"},
+
+    -- Street-level
+    street = {"street_dealer_dmoney", "pawnshop_sal"},
+
+    -- Roxwood
+    roxwood = {"roxwood_pawnshop", "roxwood_bartender"},
 }
 
 -- Reverse lookup: NPC -> Faction

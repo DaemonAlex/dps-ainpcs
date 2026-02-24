@@ -371,12 +371,19 @@ function GenerateIntelForNPC(npcId, npcData)
     -- Check what intel types this NPC would know about
     local validTypes = {}
 
+    -- Gang trust categories use specific names (vagos, ballas, families, lostmc)
+    local gangCategories = {vagos = true, ballas = true, families = true, lostmc = true, cartel = true}
+
     if npcData.trustCategory == "criminal" then
         validTypes = {"house_robbery", "store_robbery", "car_boost", "cop_patrol", "safe_house"}
-    elseif npcData.trustCategory == "gang" then
+    elseif gangCategories[npcData.trustCategory] then
         validTypes = {"drug_shipment", "stash_location", "weapon_cache", "gang_meeting", "snitch_identity"}
-    elseif npcData.trustCategory == "underground" then
+    elseif npcData.trustCategory == "underground" or npcData.trustCategory == "drugs" or npcData.trustCategory == "weapons" then
         validTypes = {"bank_job", "vault_codes", "dirty_cop", "witness_location", "evidence_room"}
+    elseif npcData.trustCategory == "heist" then
+        validTypes = {"bank_job", "vault_codes", "safe_house", "cop_patrol", "evidence_room"}
+    elseif npcData.trustCategory == "street" then
+        validTypes = {"drug_shipment", "stash_location", "cop_patrol", "safe_house", "car_boost"}
     else
         return  -- Legitimate NPCs don't have criminal intel
     end

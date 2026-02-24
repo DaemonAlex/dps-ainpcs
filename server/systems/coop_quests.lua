@@ -126,6 +126,9 @@ function LeaveCoopQuest(questId, citizenid)
         return false, "leader_cannot_leave_active"
     end
 
+    -- Save role before removing
+    local wasLeader = quest.members[citizenid].role == 'leader'
+
     MySQL.update.await([[
         DELETE FROM ai_npc_coop_members WHERE quest_id = ? AND citizenid = ?
     ]], {questId, citizenid})
@@ -133,7 +136,7 @@ function LeaveCoopQuest(questId, citizenid)
     quest.members[citizenid] = nil
 
     -- If leader left during forming, promote someone or cancel
-    if quest.members[citizenid] and quest.members[citizenid].role == 'leader' then
+    if wasLeader then
         local newLeader = nil
         for cid, data in pairs(quest.members) do
             newLeader = cid
@@ -256,7 +259,10 @@ function CompleteCoopQuest(questId, success)
 
         if success then
             -- Calculate share based on contribution
-            local share = totalContribution > 0 and (data.contribution / totalContribution) or (1 / #quest.members)
+            -- Count members (quest.members is a dict, not array, so # is unreliable)
+            local memberCount = 0
+            for _ in pairs(quest.members) do memberCount = memberCount + 1 end
+            local share = totalContribution > 0 and (data.contribution / totalContribution) or (1 / math.max(1, memberCount))
             share = math.max(0.1, share)  -- Minimum 10% share
 
             local trustReward = math.floor(baseTrust * share * (data.role == 'leader' and 1.2 or 1.0))
