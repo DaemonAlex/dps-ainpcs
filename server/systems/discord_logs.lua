@@ -2,7 +2,15 @@
 -- DISCORD WEBHOOK LOGGING WITH BATCHING
 -- Inspired by mad_goon's logging system
 -----------------------------------------------------------
-local QBCore = exports['qb-core']:GetCoreObject()
+-- qbx_core compatibility shim: this qbx build exposes NO GetCoreObject().
+-- Backed by qbx discrete exports; player objects keep qb-style .PlayerData/.Functions.
+local QBCore = {
+    Functions = {
+        GetPlayer = function(src) return exports.qbx_core:GetPlayer(src) end,
+        GetPlayerByCitizenId = function(cid) return exports.qbx_core:GetPlayerByCitizenId(cid) end,
+        GetQBPlayers = function() return exports.qbx_core:GetQBPlayers() end,
+    }
+}
 
 -- Log queue for batching
 local logQueue = {}  -- { [webhookType] = { embeds } }

@@ -3,7 +3,15 @@
     NPCs know about player actions and gossip about them
 ]]
 
-local QBCore = exports['qb-core']:GetCoreObject()
+-- qbx_core compatibility shim: this qbx build exposes NO GetCoreObject().
+-- Backed by qbx discrete exports; player objects keep qb-style .PlayerData/.Functions.
+local QBCore = {
+    Functions = {
+        GetPlayer = function(src) return exports.qbx_core:GetPlayer(src) end,
+        GetPlayerByCitizenId = function(cid) return exports.qbx_core:GetPlayerByCitizenId(cid) end,
+        GetQBPlayers = function() return exports.qbx_core:GetQBPlayers() end,
+    }
+}
 
 -- Cache of recent rumors per player
 local rumorCache = {}  -- { [citizenid] = { rumors } }
@@ -301,15 +309,37 @@ exports('BuildRumorContext', BuildRumorContext)
 -----------------------------------------------------------
 -- EVENTS FOR OTHER SCRIPTS TO HOOK INTO
 -----------------------------------------------------------
+-- M2: actionType a client is allowed to self-report via net event. Kept
+-- intentionally SMALL and low-heat. High-heat/reputation-defining actions
+-- (bank_robbery, casino_heist, cop_kill, murder, etc.) must NEVER be
+-- client-driven — they come from trusted server-side crime hooks or the
+-- RecordPlayerAction export. Everything else is rejected.
+local CLIENT_REPORTABLE_ACTIONS = {
+    large_purchase = true,
+    business_deal  = true,
+}
+
 RegisterNetEvent('ai-npcs:server:recordAction', function(actionType, details)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return end
 
-    RecordPlayerAction(Player.PlayerData.citizenid, actionType, details)
+    -- Validate: only whitelisted, low-impact action types accepted from clients.
+    if type(actionType) ~= "string" or not CLIENT_REPORTABLE_ACTIONS[actionType] then
+        return
+    end
+
+    -- Strip client-controlled reputation inflators (witnesses/isPublic/value).
+    -- Trusted callers should use the RecordPlayerAction export directly.
+    local safeDetails = { category = 'neutral' }
+
+    RecordPlayerAction(Player.PlayerData.citizenid, actionType, safeDetails)
 end)
 
--- Hook into common crime events (add more as needed)
+-- TODO: These hook qb-bankrobbery / qb-storerobbery, which DO NOT exist on this
+-- pure-Qbox box. Rewire to the actual robbery resources in use (e.g. ps-banking
+-- robberies, or the server's chosen store-robbery resource) so real crimes feed
+-- the rumor mill. Left in place as a template — they simply never fire today.
 AddEventHandler('qb-bankrobbery:server:success', function(src, bank)
     local Player = QBCore.Functions.GetPlayer(src)
     if Player then

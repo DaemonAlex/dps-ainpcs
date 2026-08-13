@@ -3,7 +3,15 @@
     Allows cops to interrogate criminal NPCs for intel
 ]]
 
-local QBCore = exports['qb-core']:GetCoreObject()
+-- qbx_core compatibility shim: this qbx build exposes NO GetCoreObject().
+-- Backed by qbx discrete exports; player objects keep qb-style .PlayerData/.Functions.
+local QBCore = {
+    Functions = {
+        GetPlayer = function(src) return exports.qbx_core:GetPlayer(src) end,
+        GetPlayerByCitizenId = function(cid) return exports.qbx_core:GetPlayerByCitizenId(cid) end,
+        GetQBPlayers = function() return exports.qbx_core:GetQBPlayers() end,
+    }
+}
 
 -- Interrogation cooldowns per NPC
 local interrogationCooldowns = {}  -- { [npcId] = lastTime }
@@ -308,6 +316,19 @@ exports('GetNPCResistance', GetNPCResistance)
 -----------------------------------------------------------
 RegisterNetEvent('ai-npcs:server:interrogate', function(npcId, method)
     local src = source
+
+    -- M3: proximity check for the fiction (job/resistance are validated inside
+    -- PerformInterrogation, so this isn't a privilege gate). IsPlayerNearNPC is
+    -- a global from server/main.lua (same resource, loaded first).
+    if IsPlayerNearNPC and not IsPlayerNearNPC(src, npcId) then
+        TriggerClientEvent('ox_lib:notify', src, {
+            title = 'Too Far',
+            description = 'You need to be next to them',
+            type = 'error'
+        })
+        return
+    end
+
     local result = PerformInterrogation(src, npcId, method)
 
     TriggerClientEvent('ai-npcs:client:interrogationResult', src, result)

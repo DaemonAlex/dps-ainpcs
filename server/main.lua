@@ -1,14 +1,34 @@
-local QBCore = exports['qb-core']:GetCoreObject()
+-- qbx_core compatibility shim: this qbx build exposes NO GetCoreObject()
+-- (both exports['qb-core']:GetCoreObject() and exports.qbx_core:GetCoreObject() throw).
+-- Provide the qb-style accessors this file uses, backed by qbx discrete exports.
+-- Player objects returned keep qb-style .PlayerData / .Functions methods.
+local QBCore = {
+    Functions = {
+        GetPlayer = function(src) return exports.qbx_core:GetPlayer(src) end,
+        GetPlayerByCitizenId = function(cid) return exports.qbx_core:GetPlayerByCitizenId(cid) end,
+        GetQBPlayers = function() return exports.qbx_core:GetQBPlayers() end,
+    }
+}
 
 -- Data stores (cache - synced with database)
 local activeConversations = {}
 local playerTrustCache = {}   -- In-memory cache, synced with DB
 local intelCooldowns = {}     -- { [identifier] = { [topic] = lastAccessTime } }
-local audioCache = {}
-local cacheSize = 0
+-- (L3) audioCache/cacheSize removed — ElevenLabs TTS is retired.
 
 -- State locking: Track which player is talking to which NPC
 local npcLocks = {}  -- { [npcId] = playerId }
+
+-- H1: rate-limit the "repeat visit" trust so it can't be farmed to 100 by
+-- re-opening the same conversation. { [identifier] = { [npcId] = lastGrantMs } }
+local repeatVisitCooldowns = {}
+local REPEAT_VISIT_TRUST_COOLDOWN = 600000  -- once per NPC per 10 min per player
+
+-- H2: SERVER-SIDE message validation. Client validation in client/main.lua is
+-- advisory only; the server must not trust it. { [src] = lastMessageMs }
+local lastMessageTimes = {}
+local MESSAGE_MAX_LENGTH = 200
+local MESSAGE_COOLDOWN_MS = 500
 
 -- Batch trust saving: Queue changes and commit periodically
 local trustUpdateQueue = {}  -- { { identifier, trustCategory, npcId, value }, ... }
@@ -545,42 +565,23 @@ function GetPlayerContext(playerId)
         end
     end
 
-    -- Check inventory for special items
-    local items = Player.PlayerData.items
-    if items then
-        for _, item in pairs(items) do
-            if item and item.name then
-                -- Check drugs
-                for _, drug in ipairs(Config.PlayerContext.specialItems.drugs) do
-                    if item.name == drug then
-                        context.hasDrugs = true
-                        break
-                    end
-                end
-                -- Check weapons
-                for _, weapon in ipairs(Config.PlayerContext.specialItems.weapons) do
-                    if item.name == weapon then
-                        context.hasWeapons = true
-                        break
-                    end
-                end
-                -- Check crime tools
-                for _, tool in ipairs(Config.PlayerContext.specialItems.crimeTools) do
-                    if item.name == tool then
-                        context.hasCrimeTools = true
-                        break
-                    end
-                end
-                -- Check valuables
-                for _, valuable in ipairs(Config.PlayerContext.specialItems.valuables) do
-                    if item.name == valuable then
-                        context.hasValuables = true
-                        break
-                    end
-                end
-            end
-        end
+    -- M1: detect special items via ox_inventory. Player.PlayerData.items is
+    -- EMPTY on qbx+ox_inventory, so the old qb-shaped loop always reported false
+    -- and the "context-aware NPC" feature no-opped. ox_inventory:Search with
+    -- 'count' accepts a list of item names and returns the total held.
+    local special = Config.PlayerContext.specialItems or {}
+    local function playerHasAny(itemList)
+        if not itemList or #itemList == 0 then return false end
+        local ok, count = pcall(function()
+            return exports.ox_inventory:Search(playerId, 'count', itemList)
+        end)
+        return ok and (count or 0) > 0
     end
+
+    context.hasDrugs      = playerHasAny(special.drugs)
+    context.hasWeapons    = playerHasAny(special.weapons)
+    context.hasCrimeTools = playerHasAny(special.crimeTools)
+    context.hasValuables  = playerHasAny(special.valuables)
 
     if Config.Debug and Config.Debug.printPlayerContext then
         print(("[AI NPCs] Player context for %s:"):format(playerId))
@@ -624,6 +625,18 @@ RegisterNetEvent('ai-npcs:server:startConversation', function(npcId)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return end
+
+    -- H1: server-authoritative proximity check. The client target has a range,
+    -- but a crafted TriggerServerEvent could open a conversation (and farm trust)
+    -- from anywhere. Reject if the player isn't actually near the NPC.
+    if not IsPlayerNearNPC(src, npcId) then
+        TriggerClientEvent('ox_lib:notify', src, {
+            title = 'Too Far',
+            description = 'You are not close enough to talk to them',
+            type = 'error'
+        })
+        return
+    end
 
     -- Check if shared character is available (not in jail)
     local canInteract, reason = CanInteractWithNPC(npcId)
@@ -696,9 +709,16 @@ RegisterNetEvent('ai-npcs:server:startConversation', function(npcId)
     -- Send greeting
     TriggerClientEvent('ai-npcs:client:receiveMessage', src, greeting, npc.id)
 
-    -- Add trust for visiting
+    -- Add trust for visiting (H1: rate-limited per NPC per player so it can't
+    -- be farmed by repeatedly re-opening the conversation).
     if Config.Trust.enabled then
-        AddPlayerTrust(identifier, npc.trustCategory, npcId, Config.Trust.earnRates.repeatVisit)
+        local now = GetGameTimer()
+        repeatVisitCooldowns[identifier] = repeatVisitCooldowns[identifier] or {}
+        local lastGrant = repeatVisitCooldowns[identifier][npcId]
+        if not lastGrant or (now - lastGrant) >= REPEAT_VISIT_TRUST_COOLDOWN then
+            AddPlayerTrust(identifier, npc.trustCategory, npcId, Config.Trust.earnRates.repeatVisit)
+            repeatVisitCooldowns[identifier][npcId] = now
+        end
     end
 
     print(("[AI NPCs] Started conversation: Player %s (%s) with %s (Trust: %s/%d)"):format(
@@ -741,6 +761,26 @@ RegisterNetEvent('ai-npcs:server:sendMessage', function(message, paymentOffer)
             type = 'error'
         })
         return
+    end
+
+    -- H2: validate message server-side (type, length, cooldown). Never trust
+    -- the client's own validation.
+    if type(message) ~= "string" then return end
+    message = message:gsub("^%s*(.-)%s*$", "%1")  -- trim
+    if message == "" then return end
+    if #message > MESSAGE_MAX_LENGTH then
+        message = message:sub(1, MESSAGE_MAX_LENGTH)
+    end
+
+    local nowMs = GetGameTimer()
+    if lastMessageTimes[src] and (nowMs - lastMessageTimes[src]) < MESSAGE_COOLDOWN_MS then
+        return  -- silently drop spam (client already gates + shows its own notice)
+    end
+    lastMessageTimes[src] = nowMs
+
+    -- Sanitize paymentOffer: must be a positive number.
+    if type(paymentOffer) ~= "number" or paymentOffer < 0 then
+        paymentOffer = 0
     end
 
     -- Handle payment
@@ -810,6 +850,14 @@ AddEventHandler('playerDropped', function()
     local src = source
     local conversation = activeConversations[src]
 
+    -- Resolve identifier for cleanup of identifier-keyed caches (best effort:
+    -- the player object is usually still resolvable during playerDropped).
+    local identifier = conversation and conversation.identifier
+    if not identifier then
+        local Player = QBCore.Functions.GetPlayer(src)
+        identifier = Player and Player.PlayerData.citizenid or nil
+    end
+
     if conversation then
         FlushTrustForPlayer(conversation.identifier)
         UnlockNPC(conversation.npcId, src)
@@ -822,6 +870,13 @@ AddEventHandler('playerDropped', function()
         if lockOwner == src then
             npcLocks[npcId] = nil
         end
+    end
+
+    -- Bounded-leak cleanup for per-player caches.
+    lastMessageTimes[src] = nil
+    if identifier then
+        intelCooldowns[identifier] = nil
+        repeatVisitCooldowns[identifier] = nil
     end
 end)
 
@@ -934,18 +989,8 @@ if Config.Trust.enabled then
 end
 
 -----------------------------------------------------------
--- AUDIO CACHE
+-- (L3) AUDIO CACHE / getAudio event REMOVED — TTS retired, text-only now.
 -----------------------------------------------------------
-RegisterNetEvent('ai-npcs:server:getAudio', function(text, voiceId)
-    local src = source
-    local audioId = GetHashKey(text .. voiceId)
-
-    if audioCache[audioId] then
-        TriggerClientEvent('ai-npcs:client:playAudio', src, audioCache[audioId])
-    else
-        GenerateTTS(src, text, voiceId, audioId)
-    end
-end)
 
 -----------------------------------------------------------
 -- EXPORTS FOR OTHER RESOURCES

@@ -1,24 +1,31 @@
 # DPS AI NPCs - Development Notes
 
+## v2.6 — Qbox port + Quest Engine (current)
+
+- **Pure Qbox / qbx_core.** This build exposes NO `GetCoreObject()`; every file uses
+  `qbx_core` discrete exports (`exports.qbx_core:GetPlayer/GetPlayerByCitizenId/GetQBPlayers`,
+  client `GetPlayerData()`), via a thin file-local compatibility shim. Admin checks use
+  `IsPlayerAceAllowed`. Inventory is **ox_inventory** (`:Search/:AddItem/:RemoveItem`).
+- **AI backend = self-hosted APEX LLM** (OpenAI-compatible). Configured in `config.lua`
+  under `Config.AI` with `provider = "openai"` and three PLACEHOLDER strings
+  (`__APEX_LLM_ENDPOINT__`, `__APEX_LLM_KEY__`, `__APEX_LLM_MODEL__`) — fill these in.
+- **ElevenLabs TTS is ABANDONED.** All TTS/audio code was removed; conversations are
+  text-only. `Config.TTS` remains only as a disabled stub.
+- **Functional quest engine** (`server/systems/quest_engine.lua`): server-authoritative
+  offer → accept → track → complete/reward, consuming `Config.Quests`.
+
+### Fresh install needs
+1. `config.lua` (gitignored, deploys via tar) — set the three `Config.AI` placeholders.
+2. `server/config_secrets.lua` (gitignored) — stub `Secrets` table; add keys later if needed.
+3. Run `sql/install.sql` + `sql/upgrade_v2.5.sql`.
+4. Deps: qbx_core, ox_lib, ox_target, ox_inventory, oxmysql, dps-badpeds, lb-phone.
+
 ## API Keys & Credentials
 
-### ElevenLabs TTS
-```
-API Key: sk_6c964f5f2baea6b46dccf6487235f931f36c5499741f6f0d
-```
-
-**Usage in config.lua:**
-```lua
-Config.TTS = {
-    enabled = true,
-    provider = "elevenlabs",
-    apiUrl = "https://api.elevenlabs.io/v1/text-to-speech/",
-    apiKey = "sk_6c964f5f2baea6b46dccf6487235f931f36c5499741f6f0d",
-    defaultVoice = "21m00Tcm4TlvDq8ikWAM",  -- Rachel
-    cacheAudio = true,
-    maxCacheSize = 100
-}
-```
+### Secrets
+All API keys/webhooks live in `server/config_secrets.lua` (gitignored) — NEVER commit real
+keys. The prior ElevenLabs key that lived here was leaked publicly and must be treated as
+compromised (it's retired now anyway). The active AI key is `Config.AI.apiKey` in `config.lua`.
 
 ---
 

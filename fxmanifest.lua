@@ -4,7 +4,7 @@ game 'gta5'
 name 'dps-ainpcs'
 author 'DaemonAlex'
 description 'AI-powered NPC conversation system with trust, quests, and intel'
-version '2.5.0'
+version '2.6.0'  -- qbx port + functional quest engine
 
 shared_scripts {
     '@ox_lib/init.lua',
@@ -30,7 +30,9 @@ server_scripts {
     'server/systems/intel.lua',
     'server/systems/coop_quests.lua',
     'server/systems/interrogation.lua',
-    'server/systems/discord_logs.lua'
+    'server/systems/discord_logs.lua',
+    -- v2.6 quest engine (must load after main.lua + faction_trust for its globals/exports)
+    'server/systems/quest_engine.lua'
 }
 
 ui_page 'html/index.html'
@@ -38,8 +40,8 @@ ui_page 'html/index.html'
 files {
     'html/index.html',
     'html/style.css',
-    'html/script.js',
-    'audio/*.ogg'
+    'html/script.js'
+    -- (L3) audio/*.ogg removed — ElevenLabs TTS retired, text-only now
 }
 
 lua54 'yes'
@@ -47,9 +49,10 @@ lua54 'yes'
 dependencies {
     'ox_lib',
     'ox_target',
+    'ox_inventory',
     'oxmysql',
-    'qb-core',
-    'dps-badpeds'  -- Shared character pool and jail status
+    'qbx_core',      -- pure Qbox (was 'qb-core')
+    'dps-badpeds'    -- Shared character pool and jail status
 }
 
 -- Exports for other resources
@@ -113,6 +116,9 @@ exports {
     'OfferQuestToPlayer',
     'CompletePlayerQuest',
     'GetPlayerQuestStatus',
+    -- Quest engine (v2.6)
+    'GetOfferableQuests',
+    'GrantQuestReward',
 
     -- Referrals
     'CreatePlayerReferral',

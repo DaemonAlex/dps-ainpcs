@@ -4,6 +4,16 @@
 -- Tokens refill at 1 per 12 seconds (5 per minute)
 -- Each AI request consumes 1 token
 -----------------------------------------------------------
+-- qbx_core compatibility shim (C1b): main.lua's QBCore is file-local, so this
+-- file must define its own accessors or it nil-indexes a bare global QBCore.
+local QBCore = {
+    Functions = {
+        GetPlayer = function(src) return exports.qbx_core:GetPlayer(src) end,
+        GetPlayerByCitizenId = function(cid) return exports.qbx_core:GetPlayerByCitizenId(cid) end,
+        GetQBPlayers = function() return exports.qbx_core:GetQBPlayers() end,
+    }
+}
+
 local playerBuckets = {}  -- { [playerId] = { tokens, lastRefill } }
 local requestQueue = {}
 local isProcessingQueue = false
@@ -541,15 +551,11 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
                     content = aiResponse
                 })
 
-                -- Send response to client (with networked flag for broadcast)
+                -- Send response to client (with networked flag for text-subtitle broadcast)
                 local isNetworked = Config.Sound and Config.Sound.enableNetworked or false
                 TriggerClientEvent('ai-npcs:client:receiveMessage', playerId, aiResponse, npc.id, isNetworked)
 
-                -- Generate TTS if enabled (decoupled from message display)
-                -- This sends a separate event for voice playback
-                if Config.TTS.enabled and Config.TTS.apiKey ~= "YOUR_ELEVENLABS_KEY_HERE" then
-                    GenerateTTS(playerId, aiResponse, npc.voice or Config.TTS.defaultVoice, npc.id, isNetworked)
-                end
+                -- (L3) ElevenLabs TTS generation removed — conversation is text-only.
 
                 if Config.Debug and Config.Debug.printResponses then
                     print(("[AI NPCs] %s says: %s"):format(npc.name, aiResponse:sub(1, 80) .. "..."))
@@ -744,7 +750,7 @@ function CleanAIResponse(response)
     -- Remove any markdown formatting that might slip through
     response = response:gsub("```", "")
     response = response:gsub("##", "")
-    response = response:gsub("**", "")
+    response = response:gsub("%*%*", "")  -- M5: was gsub("**", "") — an invalid Lua pattern (** = malformed quantifier)
 
     -- Trim whitespace
     response = response:match("^%s*(.-)%s*$")
@@ -758,126 +764,10 @@ function CleanAIResponse(response)
 end
 
 -----------------------------------------------------------
--- Text-to-Speech Generation (with proper caching)
+-- (L3) ElevenLabs TTS + audio cache REMOVED.
+-- The owner abandoned TTS; conversations are text-only. GenerateTTS,
+-- GetTTSCacheKey, CleanAudioCache, and the audioCache table are gone.
 -----------------------------------------------------------
-local audioCache = {}
-local cacheSize = 0
-
--- Create a deterministic cache key from text + voice
-local function GetTTSCacheKey(text, voiceId)
-    -- Normalize text (lowercase, trim, remove excess whitespace)
-    local normalized = text:lower():gsub("^%s+", ""):gsub("%s+$", ""):gsub("%s+", " ")
-    -- Create hash from text + voice
-    return GetHashKey(normalized .. "_" .. (voiceId or "default"))
-end
-
-function GenerateTTS(playerId, text, voiceId, npcId, isNetworked)
-    if not Config.TTS.enabled then return end
-    if not Config.TTS.apiKey or Config.TTS.apiKey == "YOUR_ELEVENLABS_KEY_HERE" then
-        return
-    end
-
-    local voice = voiceId or Config.TTS.defaultVoice
-    local cacheKey = GetTTSCacheKey(text, voice)
-
-    -- Build voice data packet (decoupled from message)
-    local voiceData = {
-        npcId = npcId,
-        voiceId = voice,
-        isNetworked = isNetworked or false,
-    }
-
-    -- Check cache first - if we have this exact phrase already, just play it
-    if Config.TTS.cacheAudio and audioCache[cacheKey] then
-        local cachedFile = audioCache[cacheKey]
-        voiceData.audioFile = cachedFile
-        voiceData.cached = true
-        TriggerClientEvent('ai-npcs:client:playVoice', playerId, voiceData)
-        if Config.Debug and Config.Debug.enabled then
-            print(("[AI NPCs] TTS cache hit: %s"):format(cachedFile))
-        end
-        return
-    end
-
-    local requestData = {
-        text = text,
-        model_id = "eleven_monolingual_v1",
-        voice_settings = {
-            stability = 0.5,
-            similarity_boost = 0.75
-        }
-    }
-
-    local headers = {
-        ["Content-Type"] = "application/json",
-        ["xi-api-key"] = Config.TTS.apiKey
-    }
-
-    local url = Config.TTS.apiUrl .. voice
-
-    PerformHttpRequest(url, function(statusCode, response, respHeaders)
-        if statusCode == 200 then
-            local fileName = ("audio_%s.ogg"):format(cacheKey)
-            local savePath = "audio/" .. fileName
-
-            -- Save audio file
-            local saved = SaveResourceFile(GetCurrentResourceName(), savePath, response, #response)
-
-            if saved then
-                -- Cache reference
-                if Config.TTS.cacheAudio then
-                    audioCache[cacheKey] = fileName
-                    cacheSize = cacheSize + 1
-
-                    -- Clean cache if too large
-                    if cacheSize > Config.TTS.maxCacheSize then
-                        CleanAudioCache()
-                    end
-                end
-
-                -- Send decoupled voice event to client
-                voiceData.audioFile = fileName
-                voiceData.cached = false
-                TriggerClientEvent('ai-npcs:client:playVoice', playerId, voiceData)
-
-                -- Broadcast to nearby players if networked
-                if isNetworked then
-                    TriggerClientEvent('ai-npcs:client:playVoiceNearby', -1, playerId, voiceData)
-                end
-
-                if Config.Debug and Config.Debug.enabled then
-                    print(("[AI NPCs] Generated TTS audio: %s (cached)"):format(fileName))
-                end
-            end
-        else
-            if Config.Debug and Config.Debug.enabled then
-                print(("[AI NPCs] TTS request failed with status: %s"):format(statusCode))
-            end
-            -- Fallback: trigger voice event without audio (client can handle gracefully)
-            voiceData.audioFile = nil
-            voiceData.error = "tts_failed"
-            TriggerClientEvent('ai-npcs:client:playVoice', playerId, voiceData)
-        end
-    end, 'POST', json.encode(requestData), headers)
-end
-
------------------------------------------------------------
--- Audio Cache Management
------------------------------------------------------------
-function CleanAudioCache()
-    local count = 0
-    for audioId, fileName in pairs(audioCache) do
-        if count >= 10 then break end
-
-        audioCache[audioId] = nil
-        cacheSize = cacheSize - 1
-        count = count + 1
-    end
-
-    if Config.Debug and Config.Debug.enabled then
-        print(("[AI NPCs] Cleaned %d cached audio files"):format(count))
-    end
-end
 
 -----------------------------------------------------------
 -- ADMIN COMMANDS (Token Bucket Management)
@@ -889,17 +779,19 @@ local ADMIN_JOBS = {
 }
 
 local function IsAdmin(source)
+    -- Console (source 0) is always allowed.
+    if source == 0 then return true end
+
+    -- ACE permission check (qbx has no QBCore.Functions.GetPermission).
+    if IsPlayerAceAllowed(source, 'group.admin') or IsPlayerAceAllowed(source, 'command') then
+        return true
+    end
+
+    -- Fallback: job-based admin (e.g. an in-city 'admin'/'god' job).
     local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then return false end
-
-    local job = Player.PlayerData.job.name
-    local group = QBCore.Functions.GetPermission(source)
-
-    -- Check job-based admin
-    if ADMIN_JOBS[job] then return true end
-
-    -- Check permission group (ace permissions)
-    if group == 'admin' or group == 'god' then return true end
+    if Player and ADMIN_JOBS[Player.PlayerData.job.name] then
+        return true
+    end
 
     return false
 end

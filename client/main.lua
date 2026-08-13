@@ -1,4 +1,5 @@
-local QBCore = exports['qb-core']:GetCoreObject()
+-- NOTE: this qbx build exposes NO GetCoreObject(). There is no QBCore global
+-- on the client; load is gated on a qbx ready check instead (see below).
 
 -- Local variables
 local spawnedNPCs = {}
@@ -103,8 +104,13 @@ end)
 -- INITIALIZATION
 -----------------------------------------------------------
 CreateThread(function()
-    while not QBCore do
-        Wait(100)
+    -- qbx ready check: wait until the player is fully loaded before spawning NPCs.
+    -- LocalPlayer.state.isLoggedIn is set by qbx_core on load; fall back to a
+    -- non-empty GetPlayerData() in case state isn't populated yet.
+    while not (LocalPlayer.state and LocalPlayer.state.isLoggedIn) do
+        local pdata = exports.qbx_core:GetPlayerData()
+        if pdata and pdata.citizenid then break end
+        Wait(250)
     end
 
     -- Initialize KVP preferences first
@@ -227,6 +233,26 @@ function AddNPCTarget(npc, npcData)
             end,
             onSelect = function()
                 ShowPaymentMenu(npcData.id)
+            end
+        },
+        {
+            -- H3: ask this NPC what jobs they have
+            name = "work_" .. npcData.id,
+            label = "Ask About Work",
+            icon = "fas fa-briefcase",
+            distance = Config.Interaction.distance,
+            onSelect = function()
+                TriggerServerEvent('ai-npcs:server:requestQuests', npcData.id)
+            end
+        },
+        {
+            -- H3: report progress on / review active jobs
+            name = "jobs_" .. npcData.id,
+            label = "Active Jobs",
+            icon = "fas fa-list-check",
+            distance = Config.Interaction.distance,
+            onSelect = function()
+                TriggerServerEvent('ai-npcs:server:getMyQuests')
             end
         }
     })
@@ -907,86 +933,9 @@ RegisterNetEvent('ai-npcs:client:hearNearbySpeech', function(sourcePlayer, npcId
     end
 end)
 
--- Legacy audio event (backwards compatibility)
-RegisterNetEvent('ai-npcs:client:playAudio', function(audioFile)
-    if not activeConversation then return end
-
-    local npcInfo = spawnedNPCs[activeConversation.npcId]
-    if npcInfo and npcInfo.entity and DoesEntityExist(npcInfo.entity) then
-        local npcCoords = GetEntityCoords(npcInfo.entity)
-
-        -- Play sound at NPC location
-        PlaySoundFromCoord(-1, "SELECT", npcCoords.x, npcCoords.y, npcCoords.z,
-            "HUD_FRONTEND_DEFAULT_SOUNDSET", false, 15.0, false)
-
-        print(("[AI NPCs] Playing TTS audio: %s"):format(audioFile))
-    end
-end)
-
--- Decoupled voice event (new system)
-RegisterNetEvent('ai-npcs:client:playVoice', function(voiceData)
-    if not activeConversation then return end
-    if not voiceData then return end
-
-    local npcId = voiceData.npcId
-    if activeConversation.npcId ~= npcId then return end
-
-    local npcInfo = spawnedNPCs[npcId]
-    if not npcInfo or not npcInfo.entity or not DoesEntityExist(npcInfo.entity) then return end
-
-    local npcCoords = GetEntityCoords(npcInfo.entity)
-
-    -- Handle TTS failure gracefully
-    if voiceData.error then
-        if Config.Debug and Config.Debug.enabled then
-            print(("[AI NPCs] Voice playback error: %s"):format(voiceData.error))
-        end
-        -- Could play a fallback sound here
-        return
-    end
-
-    -- Play the audio at NPC location
-    if voiceData.audioFile then
-        -- TODO: Integrate with actual audio playback system (xsound, etc.)
-        -- For now, play a notification sound as placeholder
-        PlaySoundFromCoord(-1, "SELECT", npcCoords.x, npcCoords.y, npcCoords.z,
-            "HUD_FRONTEND_DEFAULT_SOUNDSET", false, 15.0, false)
-
-        if Config.Debug and Config.Debug.enabled then
-            print(("[AI NPCs] Playing voice: %s (cached: %s)"):format(
-                voiceData.audioFile, tostring(voiceData.cached)))
-        end
-    end
-end)
-
--- Networked voice playback (hear other players' NPC conversations)
-RegisterNetEvent('ai-npcs:client:playVoiceNearby', function(sourcePlayer, voiceData)
-    -- Don't play our own voice broadcasts
-    if sourcePlayer == GetPlayerServerId(PlayerId()) then return end
-    if not voiceData or not voiceData.npcId then return end
-
-    -- Find the NPC entity
-    local npcInfo = spawnedNPCs[voiceData.npcId]
-    if not npcInfo or not npcInfo.entity or not DoesEntityExist(npcInfo.entity) then return end
-
-    local npcCoords = GetEntityCoords(npcInfo.entity)
-    local playerCoords = GetEntityCoords(PlayerPedId())
-    local distance = #(playerCoords - npcCoords)
-    local maxDistance = Config.Sound and Config.Sound.maxDistance or 20.0
-
-    if distance > maxDistance then return end
-
-    -- Volume falls off with distance
-    local volume = 1.0 - (distance / maxDistance)
-    if volume < 0.1 then return end
-
-    -- Play audio at NPC location if we have it
-    if voiceData.audioFile then
-        -- TODO: Integrate with actual audio playback system
-        PlaySoundFromCoord(-1, "SELECT", npcCoords.x, npcCoords.y, npcCoords.z,
-            "HUD_FRONTEND_DEFAULT_SOUNDSET", false, volume * 15.0, false)
-    end
-end)
+-- (L3) TTS playback events removed: playAudio / playVoice / playVoiceNearby.
+-- ElevenLabs is retired; NPC lines are text-only. The text "nearby speech"
+-- subtitle path (hearNearbySpeech, above) is kept.
 
 RegisterNetEvent('ai-npcs:client:endConversation', function(reason)
     EndConversation(reason)
@@ -1066,6 +1015,86 @@ RegisterNetEvent('ai-npcs:client:interrogationResult', function(resultData)
         duration = 8000
     })
 end)
+
+-----------------------------------------------------------
+-- H3: QUEST ENGINE CLIENT UI (ox_lib menus)
+-----------------------------------------------------------
+-- NPC offered a list of jobs -> pick one to accept
+RegisterNetEvent('ai-npcs:client:showQuests', function(npcId, quests)
+    if not quests or #quests == 0 then
+        exports['ox_lib']:notify({ title = 'Work', description = 'They\'ve got nothing for you right now.', type = 'info' })
+        return
+    end
+
+    local options = {}
+    for _, q in ipairs(quests) do
+        local rewardBits = {}
+        if q.reward then
+            if q.reward.money then rewardBits[#rewardBits + 1] = ('$%d'):format(q.reward.money) end
+            if q.reward.trust then rewardBits[#rewardBits + 1] = ('+%d trust'):format(q.reward.trust) end
+            if q.reward.item then rewardBits[#rewardBits + 1] = (q.reward.item.name or 'item') end
+        end
+        options[#options + 1] = {
+            title = q.title,
+            description = q.description,
+            metadata = {
+                { label = 'Type', value = q.type or 'job' },
+                { label = 'Reward', value = (#rewardBits > 0 and table.concat(rewardBits, ', ')) or 'unknown' },
+            },
+            onSelect = function()
+                TriggerServerEvent('ai-npcs:server:acceptQuest', npcId, q.id)
+            end
+        }
+    end
+
+    lib.registerContext({ id = 'ai_npc_quest_offers', title = 'Available Work', options = options })
+    lib.showContext('ai_npc_quest_offers')
+end)
+
+-- Player's active jobs -> report progress on the next objective
+RegisterNetEvent('ai-npcs:client:showMyQuests', function(list)
+    if not list or #list == 0 then
+        exports['ox_lib']:notify({ title = 'Jobs', description = 'You have no active jobs.', type = 'info' })
+        return
+    end
+
+    local options = {}
+    for _, q in ipairs(list) do
+        local nextDesc = q.nextType and ('Next: ' .. q.nextType .. (q.nextLocation and (' @ ' .. q.nextLocation) or '')) or 'Ready to finish'
+        options[#options + 1] = {
+            title = q.title,
+            description = ('%s  (%d/%d)'):format(nextDesc, q.done or 0, q.total or 0),
+            onSelect = function()
+                TriggerServerEvent('ai-npcs:server:reportObjective', q.questId)
+            end
+        }
+    end
+
+    lib.registerContext({ id = 'ai_npc_my_quests', title = 'Active Jobs', options = options })
+    lib.showContext('ai_npc_my_quests')
+end)
+
+RegisterNetEvent('ai-npcs:client:questAccepted', function(data)
+    if not data then return end
+    exports['ox_lib']:notify({
+        title = 'New Job: ' .. (data.title or ''),
+        description = data.description or 'Job accepted.',
+        type = 'inform', duration = 10000
+    })
+end)
+
+RegisterNetEvent('ai-npcs:client:questCompleted', function(data)
+    if not data then return end
+    exports['ox_lib']:notify({
+        title = 'Job Complete', description = data.title or 'You finished the job.',
+        type = 'success', duration = 10000
+    })
+end)
+
+-- Convenience command to review/report active jobs from anywhere
+RegisterCommand('myjobs', function()
+    TriggerServerEvent('ai-npcs:server:getMyQuests')
+end, false)
 
 -----------------------------------------------------------
 -- CLEANUP

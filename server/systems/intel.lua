@@ -3,7 +3,15 @@
     NPCs share actionable intelligence that expires
 ]]
 
-local QBCore = exports['qb-core']:GetCoreObject()
+-- qbx_core compatibility shim: this qbx build exposes NO GetCoreObject().
+-- Backed by qbx discrete exports; player objects keep qb-style .PlayerData/.Functions.
+local QBCore = {
+    Functions = {
+        GetPlayer = function(src) return exports.qbx_core:GetPlayer(src) end,
+        GetPlayerByCitizenId = function(cid) return exports.qbx_core:GetPlayerByCitizenId(cid) end,
+        GetQBPlayers = function() return exports.qbx_core:GetQBPlayers() end,
+    }
+}
 
 -- Intel types and their properties
 local INTEL_TYPES = {
@@ -622,6 +630,9 @@ exports('GenerateIntelForNPC', GenerateIntelForNPC)
 -----------------------------------------------------------
 -- EVENTS
 -----------------------------------------------------------
+-- Note (M3): purchaseIntel is gated by trust + price + max_buyers + already-bought
+-- checks inside PurchaseIntel, so it is not a privilege exploit. A range check
+-- here would need an extra npc_id lookup; left off deliberately as low value.
 RegisterNetEvent('ai-npcs:server:purchaseIntel', function(intelId)
     local src = source
     local success, result = PurchaseIntel(src, intelId)
@@ -645,6 +656,10 @@ end)
 -- Request available intel list
 RegisterNetEvent('ai-npcs:server:getIntelList', function(npcId)
     local src = source
+
+    -- M3: cheap proximity check for the fiction (npcId is known here).
+    if IsPlayerNearNPC and not IsPlayerNearNPC(src, npcId) then return end
+
     local intel = GetAvailableIntel(src, npcId)
     TriggerClientEvent('ai-npcs:client:showIntelList', src, intel)
 end)

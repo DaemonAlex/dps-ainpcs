@@ -80,12 +80,15 @@ Faction reputation levels:
 ## Installation
 
 1. **Dependencies**: Ensure you have:
-   - qb-core
+   - qbx_core (pure Qbox)
    - ox_lib
    - ox_target
+   - ox_inventory
    - oxmysql
    - dps-badpeds (shared character pool)
-   - AI Provider (choose one):
+   - lb-phone (notifications)
+   - AI Provider: self-hosted **APEX LLM** (OpenAI-compatible) — set the placeholders in `config.lua`
+     - (legacy AI Provider options still supported by the handler):
      - **Ollama** (FREE - runs locally on your server)
      - Anthropic API key (https://console.anthropic.com/)
      - OpenAI API key (https://platform.openai.com/)
@@ -588,6 +591,12 @@ This outputs a config template to F8 console with your current position as the s
 - Verify schedule time ranges are correct
 
 ## Version History
+
+- **v2.6.0** - Qbox Port + Quest Engine
+  - **Ported to pure Qbox** (qbx_core discrete exports; no GetCoreObject); ox_inventory item detection; ACE-based admin checks
+  - **AI backend switched to self-hosted APEX LLM** (OpenAI-compatible); ElevenLabs TTS removed (text-only)
+  - **Functional server-authoritative quest engine** consuming Config.Quests (offer/accept/track/reward)
+  - Security hardening: removed client-triggerable faction-kill, server-side chat validation, proximity/rate-limit gates
 
 - **v2.5.0** - Advanced Systems Update
   - **Faction Trust System** - Group-level reputation with gangs and organizations

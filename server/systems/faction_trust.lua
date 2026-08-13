@@ -3,7 +3,15 @@
     Group-level reputation that affects all NPCs in a faction
 ]]
 
-local QBCore = exports['qb-core']:GetCoreObject()
+-- qbx_core compatibility shim: this qbx build exposes NO GetCoreObject().
+-- Backed by qbx discrete exports; player objects keep qb-style .PlayerData/.Functions.
+local QBCore = {
+    Functions = {
+        GetPlayer = function(src) return exports.qbx_core:GetPlayer(src) end,
+        GetPlayerByCitizenId = function(cid) return exports.qbx_core:GetPlayerByCitizenId(cid) end,
+        GetQBPlayers = function() return exports.qbx_core:GetQBPlayers() end,
+    }
+}
 
 -- In-memory cache for faction trust
 local factionTrustCache = {}  -- { [citizenid] = { [faction] = data } }
@@ -274,12 +282,16 @@ exports('BuildFactionContext', BuildFactionContext)
 -----------------------------------------------------------
 -- EVENTS
 -----------------------------------------------------------
-RegisterNetEvent('ai-npcs:server:factionKill', function(victimFaction, wasOrdered)
-    local src = source
-    local Player = QBCore.Functions.GetPlayer(src)
-    if Player then
-        RecordFactionKill(Player.PlayerData.citizenid, victimFaction, wasOrdered)
-    end
-end)
+-- SECURITY (C2): The old RegisterNetEvent('ai-npcs:server:factionKill', ...)
+-- was REMOVED. It trusted client-supplied victimFaction/wasOrdered and granted
+-- up to +15 faction rep per call, letting any client self-grant reputation to
+-- the cap. Faction kills must be attributed by TRUSTED server-side logic only.
+--
+-- RecordFactionKill is exposed ONLY as an export (see EXPORTS above). A
+-- server-side kill/combat attribution source (e.g. a death handler that has
+-- verified the killer/victim server-side) must call:
+--     exports['dps-ainpcs']:RecordFactionKill(citizenid, victimFaction, wasOrdered)
+-- TODO: wire a server-authoritative kill source to drive this. Until then no
+-- faction kills are recorded, which is the safe default.
 
 print("^2[AI NPCs]^7 Faction Trust system loaded")
