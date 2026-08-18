@@ -411,6 +411,11 @@ function InviteToCoopQuest(questId, inviterCitizenid, targetPlayerId)
     local Inviter = QBCore.Functions.GetPlayerByCitizenId(inviterCitizenid)
     local inviterName = Inviter and Inviter.PlayerData.charinfo.firstname or "Someone"
 
+    -- Record the invite so acceptCoopInvite can verify it; ids are guessable and
+    -- are broadcast to invitees, so acceptance must not be open to everyone.
+    quest.invited = quest.invited or {}
+    quest.invited[Target.PlayerData.citizenid] = true
+
     -- Send invite to target
     TriggerClientEvent('ai-npcs:client:coopQuestInvite', targetPlayerId, {
         questId = questId,
@@ -442,6 +447,21 @@ RegisterNetEvent('ai-npcs:server:acceptCoopInvite', function(questId)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return end
+
+    -- Require an outstanding invite for THIS player: quest ids are broadcast to
+    -- invitees and follow a guessable format, so anyone could join a forming crew
+    -- and take a full contribution share of the completion payout.
+    local cid = Player.PlayerData.citizenid
+    local quest = activeCoopQuests and activeCoopQuests[questId]
+    local invited = quest ~= nil and (
+        (quest.invited and quest.invited[cid]) or quest.leader == cid or quest.createdBy == cid
+    )
+    if not invited then
+        TriggerClientEvent('ox_lib:notify', src, {
+            title = 'Error', description = 'You were not invited to that job', type = 'error'
+        })
+        return
+    end
 
     local success, err = JoinCoopQuest(questId, Player.PlayerData.citizenid)
     if success then

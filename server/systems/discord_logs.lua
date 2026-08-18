@@ -62,7 +62,7 @@ local function GetPlayerIdentifiers(playerId)
         ip = nil,
     }
 
-    for _, id in ipairs(GetPlayerIdentifiers(playerId)) do
+    for _, id in ipairs(_G.GetPlayerIdentifiers(playerId)) do  -- native, not this local (was infinite recursion)
         if string.find(id, "steam:") then
             identifiers.steam = id
         elseif string.find(id, "license:") then

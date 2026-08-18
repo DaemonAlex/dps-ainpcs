@@ -300,7 +300,11 @@ exports('BuildMoodContext', BuildMoodContext)
 -- These would be triggered by other scripts
 
 -- Police raid happening? Everyone's on edge
-RegisterNetEvent('ai-npcs:server:globalEvent', function(eventType, duration)
+-- NOT a net event: this was client-triggerable, so any player could put every NPC
+-- at -30 mood server-wide for an arbitrary (effectively unlimited) duration, and a
+-- non-numeric duration killed the handler inside SetTimeout arithmetic. Other
+-- resources should TriggerEvent this server-side.
+AddEventHandler('ai-npcs:server:globalEvent', function(eventType, duration)
     local events = {
         police_raid = -30,      -- Everyone paranoid
         gang_war = -20,         -- Tension in the air
@@ -310,9 +314,13 @@ RegisterNetEvent('ai-npcs:server:globalEvent', function(eventType, duration)
         good_weather = 10,      -- Nice day
     }
 
+    duration = tonumber(duration) or 3600
+    if duration ~= duration or duration <= 0 then duration = 3600 end
+    duration = math.min(duration, 21600)  -- 6h ceiling
+
     local modifier = events[eventType]
     if modifier then
-        SetGlobalMoodEvent(eventType, modifier, duration or 3600)
+        SetGlobalMoodEvent(eventType, modifier, duration)
     end
 end)
 

@@ -288,10 +288,26 @@ local function validateObjective(src, obj)
     return true, false
 end
 
+-- Minimum time between objective reports. Objectives with neither coords nor an
+-- item fall through to "allowed while near the quest giver", so without a gate a
+-- player could click report twice at the NPC and instantly bank a full quest
+-- reward, then re-accept and repeat.
+local lastObjectiveReport = {}
+local OBJECTIVE_MIN_GAP = 15000  -- ms
+
 RegisterNetEvent('ai-npcs:server:reportObjective', function(questId)
     local src = source
     local citizenid, Player = getCitizenId(src)
     if not citizenid then return end
+
+    local now = GetGameTimer()
+    if lastObjectiveReport[src] and (now - lastObjectiveReport[src]) < OBJECTIVE_MIN_GAP then
+        TriggerClientEvent('ox_lib:notify', src, {
+            title = 'Not yet', description = 'Give it a minute.', type = 'error'
+        })
+        return
+    end
+    lastObjectiveReport[src] = now
 
     -- Locate the quest definition + owning NPC.
     local quest, setKey = GetQuestById(questId)
@@ -365,13 +381,21 @@ RegisterNetEvent('ai-npcs:server:reportObjective', function(questId)
             title = 'Progress', description = ('Step %d/%d done.'):format(idx, #progress), type = 'success'
         })
     else
-        -- All objectives complete -> pay out + close.
-        GrantQuestReward(src, citizenid, Player, npc, npcId, quest)
-        MySQL.update.await([[
+        -- Claim the completion FIRST, conditionally, then pay. Previously the
+        -- reward was granted before the status write, and there is a yield between
+        -- reading the row and writing it, so two concurrent reportObjective calls
+        -- both saw 'in_progress' and both paid out - unlimited duplication.
+        local claimed = MySQL.update.await([[
             UPDATE ai_npc_quests
             SET status = 'completed', reward_claimed = TRUE, quest_data = ?, completed_at = CURRENT_TIMESTAMP
-            WHERE citizenid = ? AND quest_id = ?
+            WHERE citizenid = ? AND quest_id = ? AND status <> 'completed' AND reward_claimed <> TRUE
         ]], {json.encode(data), citizenid, questId})
+
+        if not claimed or claimed == 0 then
+            return  -- another call already completed and paid this quest
+        end
+
+        GrantQuestReward(src, citizenid, Player, npc, npcId, quest)
 
         TriggerClientEvent('ox_lib:notify', src, {
             title = 'Job Complete', description = quest.title, type = 'success', duration = 10000
@@ -432,6 +456,10 @@ end
 -----------------------------------------------------------
 -- Player's active quests (for the client "my jobs" menu)
 -----------------------------------------------------------
+AddEventHandler('playerDropped', function()
+    lastObjectiveReport[source] = nil
+end)
+
 RegisterNetEvent('ai-npcs:server:getMyQuests', function()
     local src = source
     local citizenid = getCitizenId(src)
