@@ -25,4 +25,5 @@ node_modules/
 # Temp files
 *.tmp
 *.temp
-*.cache
+*.cache*.bak
+*.bak-*

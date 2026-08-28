@@ -88,7 +88,7 @@ function SendPhoneNotification(playerId, notification)
             title = npcName,
             text = notification.message,
             icon = 'user-secret',
-            color = '#ff6b35'
+            color = '#ff7a45'
         })
     end
 

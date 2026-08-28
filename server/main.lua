@@ -612,8 +612,21 @@ function RecordIntelAccess(identifier, topic)
     intelCooldowns[identifier][topic] = GetGameTimer()
 end
 
+-- Intel tiers (rumors/basic/detailed/sensitive/exclusive) don't match the price
+-- table's bands (low/medium/high/premium), so every lookup missed and ALL intel
+-- was free. Map tier -> band.
+local INTEL_TIER_BAND = {
+    rumors    = nil,        -- free by design
+    basic     = 'low',
+    detailed  = 'medium',
+    sensitive = 'high',
+    exclusive = 'premium',
+}
+
 function GetIntelPrice(tier)
-    local priceRange = Config.Intel.prices[tier]
+    local band = INTEL_TIER_BAND[tier]
+    if not band then return 0 end
+    local priceRange = Config.Intel.prices[band]
     if not priceRange then return 0 end
     return math.random(priceRange.min, priceRange.max)
 end
@@ -789,8 +802,20 @@ RegisterNetEvent('ai-npcs:server:sendMessage', function(message, paymentOffer)
         if Player and Player.PlayerData.money.cash >= paymentOffer then
             Player.Functions.RemoveMoney('cash', paymentOffer, 'npc-intel-payment')
             conversation.paymentMade = conversation.paymentMade + paymentOffer
-            AddPlayerTrust(conversation.identifier, conversation.npc.trustCategory,
-                conversation.npcId, Config.Trust.earnRates.payment)
+
+            -- Trust from payment was a flat grant per payment with no minimum, so
+            -- $1 every 500ms took an NPC from Stranger to Inner Circle in ~10s and
+            -- unlocked exclusive intel permanently. Require a meaningful payment
+            -- and cap how much trust one conversation can buy.
+            local minPay = (Config.Trust.minPaymentForTrust or 250)
+            local capPerConvo = (Config.Trust.maxPaymentTrustPerConversation or 10)
+            conversation.trustFromPayment = conversation.trustFromPayment or 0
+            if paymentOffer >= minPay and conversation.trustFromPayment < capPerConvo then
+                local grant = math.min(Config.Trust.earnRates.payment, capPerConvo - conversation.trustFromPayment)
+                conversation.trustFromPayment = conversation.trustFromPayment + grant
+                AddPlayerTrust(conversation.identifier, conversation.npc.trustCategory,
+                    conversation.npcId, grant)
+            end
 
             TriggerClientEvent('ox_lib:notify', src, {
                 title = conversation.npc.name,
@@ -892,8 +917,12 @@ RegisterNetEvent('ai-npcs:server:requestIntel', function(topic, tier)
     local npc = conversation.npc
     local identifier = conversation.identifier
 
-    -- Check trust requirement
-    local trustRequired = Config.Intel.trustRequirements[tier] or 0
+    -- Reject unknown tiers outright: 'trustRequirements[tier] or 0' meant any
+    -- unrecognised tier string required 0 trust and (being ~= 'rumors' only by
+    -- name) could skip the payment branch, so sensitive topics were free.
+    local trustRequired = Config.Intel.trustRequirements[tier]
+    if trustRequired == nil then return end
+
     if conversation.trustValue < trustRequired then
         TriggerClientEvent('ai-npcs:client:receiveMessage', src,
             "*shakes head* I don't know you well enough to talk about that...", npc.id)
