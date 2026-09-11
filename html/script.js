@@ -129,7 +129,7 @@ function sendMessage() {
         body: JSON.stringify({
             message: message
         })
-    }).then(response => response.text()).then(result => {
+    }).then(response => response.json()).then(result => {
         if (result !== 'ok') {
             console.error('[AI NPCs] Failed to send message');
             setTyping(false);
