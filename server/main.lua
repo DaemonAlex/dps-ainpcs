@@ -154,13 +154,35 @@ function IsPlayerNearNPC(playerId, npcId)
     if not playerPed or playerPed == 0 then return false end
 
     local playerCoords = GetEntityCoords(playerPed)
-    local npcCoords = npc.homeLocation
 
-    -- Calculate distance (use vector if available, else manual)
-    local distance = #(vector3(playerCoords.x, playerCoords.y, playerCoords.z) -
-                       vector3(npcCoords.x, npcCoords.y, npcCoords.z))
+    -- The ped is spawned client-side, so the server cannot read where it is
+    -- standing right now. Measure against every spot the movement pattern can
+    -- put it (home plus configured patrol/schedule locations) and widen the
+    -- limit by the wander radius for wanderers. Calls from across the map are
+    -- still rejected.
+    local allowed = INTERACTION_RANGE
+    local spots = { npc.homeLocation }
+    local movement = npc.movement
+    if movement then
+        if movement.pattern == "wander" then
+            local wander = Config.Movement and Config.Movement.patterns and Config.Movement.patterns.wander
+            allowed = allowed + ((wander and wander.radius) or 0)
+        end
+        if type(movement.locations) == "table" then
+            for _, loc in ipairs(movement.locations) do
+                if loc.coords then spots[#spots + 1] = loc.coords end
+            end
+        end
+    end
 
-    return distance <= INTERACTION_RANGE
+    local playerVec = vector3(playerCoords.x, playerCoords.y, playerCoords.z)
+    for _, spot in ipairs(spots) do
+        if spot and #(playerVec - vector3(spot.x, spot.y, spot.z)) <= allowed then
+            return true
+        end
+    end
+
+    return false
 end
 
 -- Extended range check for quest interactions (player might be further away for deliveries)
