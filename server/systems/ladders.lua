@@ -61,8 +61,9 @@ function AdvanceLadder(src, citizenid, npcId, questId)
     if not lk then return nil end
     if not RungIsComplete(citizenid, npcId, rung) then return nil end
     local row = GetLadderRow(citizenid, lk, rk)
-    if row and row.status == "burned" then return nil end
-    if row and (tonumber(row.rung) or 1) > idx then return nil end
+    -- done and burned ladders never move again (no payoff farming); rungs go in order, no skipping
+    if row and row.status ~= "active" then return nil end
+    if ((row and tonumber(row.rung)) or 1) ~= idx then return nil end
     local total = #Config.Ladders[lk][rk].rungs
     local owner = GetNPCById(npcId)
     local ownerName = owner and owner.name or npcId

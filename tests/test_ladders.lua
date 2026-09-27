@@ -39,6 +39,18 @@ eq("already past", AdvanceLadder(1, "cid", "pawn_shop_owner", "pawn_stolen_goods
 MySQL.__rows = { ["FROM ai_npc_ladders"] = { { ladder = "score", region = "ls", rung = 1, status = "burned" } } }
 eq("burned", AdvanceLadder(1, "cid", "pawn_shop_owner", "pawn_stolen_goods"), nil)
 
+-- done: re-completing the last quest pays nothing again
+MySQL.__rows = { ["FROM ai_npc_ladders"] = { { ladder = "score", region = "ls", rung = 3, status = "done" } } }
+MySQL.__writes = {}
+eq("done ladder stays done", AdvanceLadder(1, "cid", "arms_dealer_docks", "arms_small_delivery"), nil)
+eq("done ladder no writes", #MySQL.__writes, 0)
+
+-- no row yet, finishing rung 2 first: rungs go in order, nothing happens
+MySQL.__rows = { ["FROM ai_npc_ladders"] = {} }
+MySQL.__writes = {}
+eq("cannot skip rung 1", AdvanceLadder(1, "cid", "chop_shop_boss", "chop_first_boost"), nil)
+eq("skip writes nothing", #MySQL.__writes, 0)
+
 -- last rung: done + payoff
 local added = {}
 exports = setmetatable({}, { __index = function() return { AddItem = function(_, src, name, amount) added[#added + 1] = name .. "x" .. amount end } end })

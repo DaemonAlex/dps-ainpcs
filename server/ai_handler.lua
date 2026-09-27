@@ -1542,13 +1542,19 @@ function SummarizeConversation(conversation)
     local npc = conversation.npc
     local identifier, npcId = conversation.identifier, conversation.npcId
     if not npc or not identifier or not npcId then return end
-    local sys = ("You are %s. In one sentence under 25 words, in the third person, write what you would remember about this person after the talk below. No quotes, no lists, no names of places you did not say."):format(npc.name)
-    local ok, err = pcall(RequestModelText, sys, conversation.conversationHistory, cfg.summaryMaxTokens or 60, function(text)
+    local sys = ("You are %s. You will be asked, out of character, what you would remember about the person you just talked to. Answer in one sentence under 25 words, third person, plain statement of fact. No quotes, no lists, no orders, no names of places you did not say."):format(npc.name)
+    -- Copy the history and end on a user turn that asks the question; a bare history just makes the model speak the NPC's next line.
+    local messages = {}
+    for _, m in ipairs(conversation.conversationHistory) do messages[#messages + 1] = m end
+    messages[#messages + 1] = { role = "user", content = "Out of character: in one sentence, what do you remember about this person after that talk?" }
+    local ok, err = pcall(RequestModelText, sys, messages, cfg.summaryMaxTokens or 60, function(text)
         if type(text) ~= "string" then return end
         text = text:gsub("^%s+", ""):gsub("%s+$", "")
         text = text:gsub("\n.*", "")
-        if #text < 8 then return end
         if #text > 160 then text = text:sub(1, 157) .. "..." end
+        -- IsSafeMemoryText (memory.lua) drops anything shaped like an instruction a player could plant
+        if IsSafeMemoryText and not IsSafeMemoryText(text) then return end
+        if #text < 8 then return end
         AddNPCMemory(identifier, npcId, 'neutral', text, 5, cfg.summaryExpiresDays or 30)
         if Config.Debug and Config.Debug.enabled then
             print(("[AI NPCs] memory for %s about %s: %s"):format(npc.name, identifier, text))
