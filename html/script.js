@@ -1,225 +1,142 @@
+// DPS 2026-09-27: subtitle talk layer for dps-ainpcs. Same NUI contract as before:
+//   in:  openConversation {npcName, npcRole} · receiveMessage {message, npcName} · closeConversation
+//   out: sendMessage {message} · offerPayment · endConversation · closeUI
 let conversationOpen = false;
 let isTyping = false;
+let typeTimer = null;
 
-// DOM Elements
-const conversationContainer = document.getElementById('conversation-container');
-const npcNameElement = document.getElementById('npc-name');
-const npcRoleElement = document.getElementById('npc-role');
-const messagesContainer = document.getElementById('conversation-messages');
-const messageInput = document.getElementById('message-input');
-const sendButton = document.getElementById('send-btn');
-const endButton = document.getElementById('end-conversation-btn');
-const closeButton = document.getElementById('close-btn');
-const paymentButton = document.getElementById('payment-btn');
+const talk = document.getElementById('talk');
+const nameEl = document.getElementById('npc-name');
+const lineEl = document.getElementById('line');
+const ringEl = document.getElementById('ring');
+const inputEl = document.getElementById('message-input');
+const payBtn = document.getElementById('pay-btn');
+const leaveBtn = document.getElementById('leave-btn');
+const gestureEl = document.getElementById('gesture');
 
-// Event Listeners
-messageInput.addEventListener('keypress', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-    }
-});
-
-sendButton.addEventListener('click', sendMessage);
-endButton.addEventListener('click', endConversation);
-closeButton.addEventListener('click', closeConversation);
-paymentButton.addEventListener('click', offerPayment);
-
-// Prevent default browser behavior
-document.addEventListener('keydown', function(e) {
-    if (conversationOpen) {
-        // Allow typing in input field
-        if (document.activeElement === messageInput) {
-            return;
-        }
-
-        // Prevent other keys when conversation is open
-        if (e.key === 'Escape') {
-            endConversation();
-        }
-        e.preventDefault();
-    }
-});
-
-// NUI Message Handler
-window.addEventListener('message', function(event) {
-    const data = event.data;
-
-    switch (data.action) {
-        case 'openConversation':
-            openConversation(data.npcName, data.npcRole);
-            break;
-        case 'closeConversation':
-            closeConversation();
-            break;
-        case 'receiveMessage':
-            receiveMessage(data.message, data.npcName);
-            break;
-    }
-});
-
-// Open conversation UI
-function openConversation(npcName, npcRole) {
-    conversationOpen = true;
-    npcNameElement.textContent = npcName;
-    npcRoleElement.textContent = npcRole.replace(/_/g, ' ').toUpperCase();
-
-    // Clear previous messages
-    messagesContainer.innerHTML = '';
-
-    // Show container
-    conversationContainer.classList.remove('hidden');
-
-    // Focus input
-    setTimeout(() => {
-        messageInput.focus();
-    }, 100);
-
-    console.log(`[AI NPCs] Opened conversation with ${npcName}`);
-}
-
-// Close conversation UI (visual only - called by endConversation or server message)
-function closeConversation() {
-    conversationOpen = false;
-    isTyping = false;
-    sendButton.disabled = false;
-    conversationContainer.classList.add('hidden');
-
-    // Clear input
-    messageInput.value = '';
-
-    // Remove any leftover typing indicator
-    const typingIndicator = document.getElementById('typing-indicator');
-    if (typingIndicator) typingIndicator.remove();
-
-    // Notify client to release NUI focus
-    fetch(`https://${GetParentResourceName()}/closeUI`, {
+function post(name, body) {
+    return fetch(`https://${GetParentResourceName()}/${name}`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({})
-    }).catch(err => console.error('[AI NPCs] closeUI error:', err));
-
-    console.log('[AI NPCs] Closed conversation UI');
-}
-
-// Send message to NPC
-function sendMessage() {
-    if (isTyping) return;
-
-    const message = messageInput.value.trim();
-    if (!message) return;
-
-    // Add player message to UI
-    addMessage(message, 'player', 'You');
-
-    // Clear input
-    messageInput.value = '';
-
-    // Set typing state
-    setTyping(true);
-
-    // Send to server
-    fetch(`https://${GetParentResourceName()}/sendMessage`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            message: message
-        })
-    }).then(response => response.json()).then(result => {
-        if (result !== 'ok') {
-            console.error('[AI NPCs] Failed to send message');
-            setTyping(false);
-        }
-    }).catch(err => {
-        console.error('[AI NPCs] sendMessage error:', err);
-        setTyping(false);
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {})
     });
 }
 
-// Receive message from NPC
-function receiveMessage(message, npcName) {
+inputEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
+});
+payBtn.addEventListener('click', offerPayment);
+leaveBtn.addEventListener('click', endConversation);
+
+document.addEventListener('keydown', function (e) {
+    if (!conversationOpen) return;
+    if (e.key === 'Escape') { e.preventDefault(); endConversation(); return; }
+    if (document.activeElement !== inputEl && e.key.length === 1) {
+        inputEl.focus();
+    }
+});
+
+window.addEventListener('message', function (event) {
+    const data = event.data || {};
+    switch (data.action) {
+        case 'openConversation': openConversation(data.npcName, data.npcRole, data.trust); break;
+        case 'closeConversation': closeConversation(); break;
+        case 'receiveMessage': receiveMessage(data.message, data.npcName, data.gesture); break;
+        case 'setTrust': setTrust(data.trust); break;
+    }
+});
+
+function setTrust(value) {
+    const pct = Math.max(0, Math.min(100, Number(value) || 0));
+    ringEl.style.setProperty('--trust', pct + '%');
+}
+
+function openConversation(npcName, npcRole, trust) {
+    conversationOpen = true;
+    nameEl.textContent = npcName || '';
+    setTrust(trust);
+    showLine('');
+    gestureEl.classList.add('hidden');
+    inputEl.value = '';
+    talk.classList.remove('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+}
+
+function closeConversation() {
+    conversationOpen = false;
     setTyping(false);
-    addMessage(message, 'npc', npcName);
+    talk.classList.add('hidden');
+    inputEl.value = '';
+    if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
+    post('closeUI').catch(() => {});
 }
 
-// Add message to conversation
-function addMessage(text, sender, senderName) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${sender}`;
-
-    const senderDiv = document.createElement('div');
-    senderDiv.className = 'message-sender';
-    senderDiv.textContent = senderName;
-
-    const textDiv = document.createElement('div');
-    textDiv.textContent = text;
-
-    messageDiv.appendChild(senderDiv);
-    messageDiv.appendChild(textDiv);
-
-    messagesContainer.appendChild(messageDiv);
-
-    // Scroll to bottom
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+function sendMessage() {
+    if (isTyping || !conversationOpen) return;
+    const message = inputEl.value.trim();
+    if (!message) return;
+    inputEl.value = '';
+    setTyping(true);
+    post('sendMessage', { message })
+        .then(r => r.json())
+        .then(result => { if (result !== 'ok') setTyping(false); })
+        .catch(() => setTyping(false));
 }
 
-// Set typing indicator
+// Type the NPC line out, rendering *stage directions* in italics.
+function showLine(text) {
+    if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
+    lineEl.classList.remove('thinking');
+    lineEl.innerHTML = '';
+    if (!text) return;
+    const parts = text.split(/(\*[^*]+\*)/g).filter(Boolean);
+    const spans = parts.map(p => {
+        const el = document.createElement(p.startsWith('*') ? 'em' : 'span');
+        el.dataset.full = p.startsWith('*') ? p.slice(1, -1) : p;
+        el.textContent = '';
+        lineEl.appendChild(el);
+        return el;
+    });
+    let i = 0, j = 0;
+    typeTimer = setInterval(() => {
+        if (i >= spans.length) { clearInterval(typeTimer); typeTimer = null; return; }
+        const full = spans[i].dataset.full;
+        j += 2;
+        spans[i].textContent = full.slice(0, j);
+        if (j >= full.length) { spans[i].textContent = full; i++; j = 0; }
+    }, 18);
+}
+
+function receiveMessage(message, npcName, gesture) {
+    setTyping(false);
+    if (npcName) nameEl.textContent = npcName;
+    showLine(message || '');
+    if (gesture) {
+        gestureEl.textContent = '[' + gesture + ']';
+        gestureEl.classList.remove('hidden');
+        setTimeout(() => gestureEl.classList.add('hidden'), 2500);
+    }
+    setTimeout(() => inputEl.focus(), 30);
+}
+
 function setTyping(typing) {
     isTyping = typing;
-    sendButton.disabled = typing;
-
+    payBtn.disabled = typing;
     if (typing) {
-        // Add typing indicator
-        const typingDiv = document.createElement('div');
-        typingDiv.className = 'typing-indicator';
-        typingDiv.id = 'typing-indicator';
-        typingDiv.textContent = `${npcNameElement.textContent} is thinking...`;
-
-        messagesContainer.appendChild(typingDiv);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    } else {
-        // Remove typing indicator
-        const typingIndicator = document.getElementById('typing-indicator');
-        if (typingIndicator) {
-            typingIndicator.remove();
-        }
+        if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
+        lineEl.classList.add('thinking');
+        lineEl.textContent = '…';
     }
 }
 
-// Offer payment to NPC
 function offerPayment() {
     if (!conversationOpen) return;
-
-    fetch(`https://${GetParentResourceName()}/offerPayment`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({})
-    }).catch(err => console.error('[AI NPCs] offerPayment error:', err));
+    post('offerPayment').catch(() => {});
 }
 
-// End conversation (proper cleanup - tells server to unlock NPC, then closes UI)
 function endConversation() {
     if (!conversationOpen) return;
-
-    fetch(`https://${GetParentResourceName()}/endConversation`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({})
-    }).catch(err => console.error('[AI NPCs] endConversation error:', err));
-
-    // endConversation NUI callback in Lua calls EndConversation() which sends
-    // closeConversation message back to NUI, so we don't call closeConversation() here
+    post('endConversation').catch(() => {});
 }
 
-// Utility function to get resource name
-function GetParentResourceName() {
-    return 'dps-ainpcs';
-}
+function GetParentResourceName() { return 'dps-ainpcs'; }

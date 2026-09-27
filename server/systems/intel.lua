@@ -340,31 +340,30 @@ function BuildIntelContext(npcId, citizenid)
         LIMIT 5
     ]], {npcId, citizenid})
 
+    -- DPS 2026-09-27 knowledge lock: the model only ever sees what this player has
+    -- earned. Locked rows are never described, not even by category; the prompt gets
+    -- one line saying there is more, and nothing about what it is.
     if availableIntel and #availableIntel > 0 then
-        context = "\n=== INTEL YOU CAN OFFER ===\n"
-        context = context .. "You have information the player might want to buy:\n"
+        local offered, lockedCount = {}, 0
 
         for _, intel in ipairs(availableIntel) do
-            local canOffer = trust >= intel.trust_required
-            local urgency = intel.hours_left <= 2 and " (URGENT - expires soon!)" or ""
-
-            if canOffer then
-                context = context .. string.format(
-                    "- %s ($%d) - %s%s\n",
-                    intel.title, intel.value, intel.category, urgency
-                )
+            if trust >= intel.trust_required then
+                local urgency = intel.hours_left <= 2 and " (this goes stale in a couple of hours)" or ""
+                offered[#offered + 1] = string.format("- %s, worth about $%d to you%s", intel.title, intel.value, urgency)
             else
-                context = context .. string.format(
-                    "- [LOCKED - needs %d trust] %s hint about it to build interest\n",
-                    intel.trust_required, intel.category
-                )
+                lockedCount = lockedCount + 1
             end
         end
 
-        context = context .. "\nIf player asks about intel or info, you can:\n"
-        context = context .. "- Offer to sell what they qualify for\n"
-        context = context .. "- Hint at locked intel to motivate trust building\n"
-        context = context .. "- Mention time sensitivity if intel expires soon\n"
+        if #offered > 0 then
+            context = "\n=== WHAT YOU COULD SELL THEM ===\n"
+            context = context .. table.concat(offered, "\n") .. "\n"
+            context = context .. "Only bring these up if it fits the talk. Name a price like a person would; never read it out like a menu.\n"
+        end
+
+        if lockedCount > 0 then
+            context = context .. "\nYou know more than you are letting on, but they have not earned it. Do not describe it, do not hint at what it is about; at most let them feel there is more if they prove themselves.\n"
+        end
     end
 
     return context

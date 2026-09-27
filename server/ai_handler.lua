@@ -545,7 +545,21 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
                 -- Clean up response
                 aiResponse = CleanAIResponse(aiResponse)
 
-                -- Add AI response to conversation history
+                -- DPS 2026-09-27: pull the gesture tag off the end ([shrug] etc.), never show it as text
+                local gesture = nil
+                local tag = aiResponse:match("%[([%a_]+)%]%s*$")
+                if tag then
+                    tag = tag:lower()
+                    for _, g in ipairs(GESTURE_TAGS) do
+                        if g == tag then gesture = g break end
+                    end
+                    aiResponse = aiResponse:gsub("%s*%[[%a_]+%]%s*$", "")
+                end
+                -- strip any stray tags the model put mid-line
+                aiResponse = aiResponse:gsub("%s*%[[%a_]+%]", "")
+                aiResponse = aiResponse:match("^%s*(.-)%s*$") or aiResponse
+
+                -- Add AI response to conversation history (without the tag)
                 table.insert(conversation.conversationHistory, {
                     role = "assistant",
                     content = aiResponse
@@ -553,12 +567,12 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
 
                 -- Send response to client (with networked flag for text-subtitle broadcast)
                 local isNetworked = Config.Sound and Config.Sound.enableNetworked or false
-                TriggerClientEvent('ai-npcs:client:receiveMessage', playerId, aiResponse, npc.id, isNetworked)
+                TriggerClientEvent('ai-npcs:client:receiveMessage', playerId, aiResponse, npc.id, isNetworked, gesture)
 
                 -- (L3) ElevenLabs TTS generation removed — conversation is text-only.
 
                 if Config.Debug and Config.Debug.printResponses then
-                    print(("[AI NPCs] %s says: %s"):format(npc.name, aiResponse:sub(1, 80) .. "..."))
+                    print(("[AI NPCs] %s says: %s [gesture=%s]"):format(npc.name, aiResponse:sub(1, 80) .. "...", tostring(gesture)))
                 end
             else
                 print("[AI NPCs] Failed to parse AI response")
@@ -609,10 +623,141 @@ end
 -----------------------------------------------------------
 -- Build Context-Aware System Prompt (v2.5 Enhanced)
 -----------------------------------------------------------
+-----------------------------------------------------------
+-- DPS 2026-09-27: "right now" world block (facts only, no positions, no names)
+-----------------------------------------------------------
+local function BuildWorldContext()
+    local lines = {}
+
+    local w = GlobalState.weather
+    local weatherName
+    if type(w) == "table" then
+        weatherName = w.weather or w.name or w.type or w.current
+    elseif type(w) == "string" then
+        weatherName = w
+    end
+    if weatherName then
+        local pretty = tostring(weatherName):lower():gsub("_", " ")
+        lines[#lines + 1] = ("Weather right now: %s."):format(pretty)
+    end
+    if GlobalState.blackOut then
+        lines[#lines + 1] = "The power is out across the city."
+    end
+
+    local okCops, cops = pcall(function() return exports.qbx_core:GetDutyCountType('leo') end)
+    if okCops and type(cops) == "number" then
+        if cops == 0 then
+            lines[#lines + 1] = "No cops are on duty anywhere right now."
+        else
+            lines[#lines + 1] = ("About %d cop%s on duty in the state."):format(cops, cops == 1 and "" or "s")
+        end
+    end
+    local okMed, meds = pcall(function() return exports.qbx_core:GetDutyCountType('ems') end)
+    if okMed and type(meds) == "number" then
+        lines[#lines + 1] = meds == 0 and "No medics or firefighters on duty." or ("%d medic%s and firefighters on duty."):format(meds, meds == 1 and "" or "s")
+    end
+
+    local people = #GetPlayers()
+    lines[#lines + 1] = people <= 3 and "The city is dead quiet tonight, hardly anyone around." or ("Around %d people are out in the city."):format(people)
+
+    if #lines == 0 then return "" end
+    return "=== RIGHT NOW (true facts, use them if they fit, never quote them like a report) ===\n- " .. table.concat(lines, "\n- ") .. "\n"
+end
+
+-----------------------------------------------------------
+-- DPS 2026-09-27: what a local knows. Real places (data/places.lua) near where this NPC
+-- stands, plus the ones everyone knows, with a rough direction and distance. Facts only;
+-- the character decides how much to say and how.
+-----------------------------------------------------------
+local function compassFrom(dx, dy)
+    local ang = math.deg(math.atan(dx, dy)) -- 0 = north, 90 = east
+    if ang < 0 then ang = ang + 360 end
+    local names = { "north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west" }
+    return names[(math.floor((ang + 22.5) / 45) % 8) + 1]
+end
+
+local function npcStandsAt(npc)
+    local loc = npc.homeLocation
+    if npc.movement and npc.movement.locations then
+        local hour = tonumber(os.date("%H")) or 12
+        for _, slot in ipairs(npc.movement.locations) do
+            local t = slot.time
+            if t and slot.coords then
+                local from, to = t[1], t[2]
+                local inSlot = (from <= to) and (hour >= from and hour < to) or (hour >= from or hour < to)
+                if inSlot then loc = slot.coords break end
+            end
+        end
+    end
+    if not loc then return nil end
+    return vector3(loc.x, loc.y, loc.z)
+end
+
+local LOCAL_RADIUS = 2500.0
+local MAX_LOCAL_PLACES = 14
+
+local function BuildLocalKnowledge(npc)
+    if not Places or #Places == 0 then return "" end
+    local here = npcStandsAt(npc)
+    local rows = {}
+    for _, p in ipairs(Places) do
+        local d = here and #(vector3(p.coords.x, p.coords.y, here.z) - here) or nil
+        local include = p.known == "everyone" or (d and d <= LOCAL_RADIUS)
+        if include then
+            rows[#rows + 1] = { p = p, d = d or 999999 }
+        end
+    end
+    if #rows == 0 then return "" end
+    table.sort(rows, function(a, b) return a.d < b.d end)
+    local lines = {}
+    for i = 1, math.min(#rows, MAX_LOCAL_PLACES) do
+        local r = rows[i]
+        local where
+        if here and r.d < 999999 then
+            local dx, dy = r.p.coords.x - here.x, r.p.coords.y - here.y
+            if r.d < 120 then
+                where = "right here, a short walk"
+            elseif r.d < 1000 then
+                where = ("about %d metres %s"):format(math.floor(r.d / 50 + 0.5) * 50, compassFrom(dx, dy))
+            else
+                where = ("about %.1f km %s, a drive"):format(r.d / 1000, compassFrom(dx, dy))
+            end
+        else
+            where = "in " .. (r.p.area or "the city")
+        end
+        lines[#lines + 1] = ("- %s: %s, %s%s"):format(r.p.name, r.p.kind, where, r.p.note and (" (" .. r.p.note .. ")") or "")
+    end
+    return "=== WHAT A LOCAL LIKE YOU KNOWS (real places; these are the only places you may name) ===\n"
+        .. table.concat(lines, "\n")
+        .. "\nIf someone asks where something is, answer the way your character would: point, whisper, make them ask twice, or refuse. You may skip places that are not your kind of thing. Never name a place that is not on this list; if it is not here, you don't know it.\n"
+end
+
+-- The gesture tags the model may end a line with. Client maps them to clips.
+GESTURE_TAGS = { "shrug", "nod", "no", "point", "wave_off", "easy", "you", "hello", "damn", "come_here", "laugh", "shocked", "grunt" }
+
 function BuildContextualSystemPrompt(npc, playerContext, conversation)
     local prompt = npc.systemPrompt .. "\n\n"
 
+    -- DPS 2026-09-27: humanization pass. Applies to every NPC on top of its own prompt.
+    prompt = prompt .. "=== HOW YOU TALK ===\n"
+    prompt = prompt .. "You are a real person on a street in San Andreas, not an assistant. Talk the way people actually talk: short, one to three sentences, contractions, slang that fits you, half-finished thoughts, a joke or a dig when it suits you. This is an adults-only place: swearing, crude jokes and a foul mood are all fine when they fit who you are.\n"
+    prompt = prompt .. "Never make lists, never use headings or bullet points, never say 'certainly', 'I understand', 'as an AI' or 'let me know'. Never summarize what was said. Never narrate rules about trust or payment; just act on them the way a person would.\n"
+    prompt = prompt .. "You only know what this prompt says you know. If asked about anything else, you shrug it off, change the subject, or lie the way this character would lie. You never invent a place, a name, a price, a time or a plan that is not written here.\n"
+    prompt = prompt .. "Small stage directions in *asterisks* are fine, one at most, kept short.\n\n"
+
     local citizenid = playerContext.citizenid
+
+    -- World block (weather, cops on duty, how busy the city is)
+    local worldContext = BuildWorldContext()
+    if worldContext ~= "" then
+        prompt = prompt .. worldContext .. "\n"
+    end
+
+    -- Places a local like this NPC knows (data/places.lua)
+    local localKnowledge = BuildLocalKnowledge(npc)
+    if localKnowledge ~= "" then
+        prompt = prompt .. localKnowledge .. "\n"
+    end
 
     -- ===========================================
     -- V2.5: NPC MOOD CONTEXT
@@ -733,12 +878,11 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
 
     -- Reminder about format
     prompt = prompt .. "\n=== RESPONSE GUIDELINES ===\n"
-    prompt = prompt .. "- Stay in character at all times\n"
-    prompt = prompt .. "- Keep responses concise and in-character\n"
-    prompt = prompt .. "- Use appropriate actions in *asterisks*\n"
-    prompt = prompt .. "- If they haven't paid enough for information, hint at needing payment\n"
-    prompt = prompt .. "- If they're a cop, stick to your cover story\n"
-    prompt = prompt .. "- Reference their trust level naturally in how open you are\n"
+    prompt = prompt .. "- Stay in character, always. If they are a cop, keep your cover.\n"
+    prompt = prompt .. "- One to three sentences. Speak, do not write.\n"
+    prompt = prompt .. "- If they have not earned or paid for something, do not hand it over; make them work for it the way this character would.\n"
+    prompt = prompt .. "- End your reply with exactly one gesture tag from this list, on its own at the very end: [" .. table.concat(GESTURE_TAGS, "] [") .. "]\n"
+    prompt = prompt .. "- React like a person: a joke gets [laugh], something off-colour or shocking gets [shocked] or [grunt], a brush-off gets [wave_off].\n"
 
     return prompt
 end
