@@ -17,8 +17,8 @@ Config.Crowds = {
         center = vector4(1986.38, 3051.36, 47.22, 203.2),  -- Damon /spot yj-center 2026-09-27 (#178)
         counter = vector3(1986.38, 3051.36, 47.22),        -- sitters spawn around here and warp onto the nearest stool
         radius = 9.0,
-        hours = { 18, 4 },          -- busy hours: everyone in the pool shows up
-        dayCount = 2,               -- outside busy hours only the first N of the pool
+        hours = nil,                -- DPS 2026-09-27 Damon: no clock gating, the whole pool shows all day
+        dayCount = 99,              -- (set hours = {18, 4} and dayCount = 2 to thin the bar by day again)
         rumors = {
             "People who want work drink here after dark and talk to the skinny guy out by the lot.",
             "The bartender hears everything and repeats none of it, unless you tip.",
