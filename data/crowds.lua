@@ -19,7 +19,17 @@ Config.Crowds = {
         radius = 12.0,
         -- Damon 2026-09-27: "I will spot some stools and seats so you can get people in those". Sitters take a free
         -- one of these (vector4, heading = the way the seat faces) with a proper sit scenario; standers stay random.
-        seats = {
+        seats = {  -- Damon /spot seat1..seat10 2026-09-27 (#180-#189): bar stools and tables inside the Yellow Jack
+            vector4(1985.32, 3053.08, 47.02, 24.2),
+            vector4(1984.70, 3052.26, 47.12, 50.4),
+            vector4(1984.22, 3051.54, 47.02, 57.4),
+            vector4(1989.12, 3049.02, 46.72, 344.2),
+            vector4(1996.66, 3049.20, 46.72, 118.8),
+            vector4(1989.46, 3046.16, 46.72, 57.8),
+            vector4(1987.48, 3046.48, 46.72, 262.8),
+            vector4(1985.74, 3055.92, 47.02, 133.0),
+            vector4(1984.66, 3056.88, 47.02, 145.2),
+            vector4(1981.20, 3056.70, 46.72, 322.0),
         },
         -- DPS 2026-09-27 Damon: "stop a_f_m_salton_01 from spawning there in the 1983.45 3049.82 47.21" — that is
         -- the bartender's side of the counter. No regular spawns within this radius of these points.
