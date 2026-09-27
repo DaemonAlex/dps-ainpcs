@@ -26,6 +26,13 @@ function MySQL.insert.await(sql, params) MySQL.__writes[#MySQL.__writes + 1] = {
 setmetatable(MySQL.insert, { __call = function(_, sql, params) MySQL.__writes[#MySQL.__writes + 1] = { sql = sql, params = params } end })
 function MySQL.update.await(sql, params) MySQL.__writes[#MySQL.__writes + 1] = { sql = sql, params = params } return 1 end
 
+-- vector stubs with the two operators the systems use (subtraction and #length)
+local vecmt = {}
+vecmt.__sub = function(a, b) return setmetatable({ x = a.x - b.x, y = a.y - b.y, z = a.z - b.z }, vecmt) end
+vecmt.__len = function(v) return math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) end
+function vector3(x, y, z) return setmetatable({ x = x, y = y, z = z }, vecmt) end
+function vector4(x, y, z, w) return setmetatable({ x = x, y = y, z = z, w = w }, vecmt) end
+
 exports = setmetatable({}, { __index = function() return setmetatable({}, { __index = function() return function() end end }) end })
 json = { encode = function(t) return "{}" end, decode = function(s) return {} end }
 function GetGameTimer() return 0 end

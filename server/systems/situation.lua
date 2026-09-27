@@ -114,7 +114,9 @@ local function hashString(s)
 end
 
 function OnMindToday(npc, dateKey)
-    if not OnMind or not npc then return nil end
+    if not npc then return nil end
+    if npc.onMindFixed then return npc.onMindFixed end -- crowd regulars carry their own line
+    if not OnMind then return nil end
     dateKey = dateKey or os.date("%Y-%m-%d")
     local cat = npc.trustCategory or "social"
     local pool = {}

@@ -40,6 +40,7 @@ check("on mind picked", type(a) == "string")
 eq("on mind stable within a day", a, b)
 check("on mind varies by day (probably)", a ~= c or true)
 eq("on mind nil without data", (function() local o = OnMind; OnMind = nil; local r = OnMindToday(npc); OnMind = o; return r end)(), nil)
+eq("on mind fixed wins", OnMindToday({ id = "x", onMindFixed = "Your dog got out." }), "Your dog got out.")
 
 local blk = FormatSituationBlock("Yellow Jack Inn", "bar", true, "nursing a drink", "late night", "Rent is due.")
 check("situation header", blk:find("=== WHERE YOU ARE AND WHAT YOU ARE DOING ===", 1, true))

@@ -211,6 +211,15 @@ function CreateNPC(npcData)
         return
     end
 
+    -- Crowd members take a random spot around their bar instead of the shared centre.
+    local crowdSit = false
+    if npcData.crowd then
+        local pt, sit = CrowdSpawnPoint(npcData)
+        if not pt then return end
+        spawnCoords = pt
+        crowdSit = sit
+    end
+
     local npc = CreatePed(4, npcData.model, spawnCoords.x, spawnCoords.y, spawnCoords.z, spawnCoords.w, false, true)
 
     -- Verify NPC was created successfully
@@ -235,8 +244,12 @@ function CreateNPC(npcData)
     SetPedConfigFlag(npc, 281, true) -- No writhe
 
     -- Movement configuration based on pattern
-    if npcData.movement and npcData.movement.pattern ~= "stationary" then
+    if npcData.movement and npcData.movement.pattern ~= "stationary" and npcData.movement.pattern ~= "crowd" then
         FreezeEntityPosition(npc, false)
+        SetPedCanPlayAmbientAnims(npc, true)
+        SetPedKeepTask(npc, true)
+    elseif npcData.movement and npcData.movement.pattern == "crowd" then
+        FreezeEntityPosition(npc, false) -- scenario warps need a free ped; the pose holds them
         SetPedCanPlayAmbientAnims(npc, true)
         SetPedKeepTask(npc, true)
     else
@@ -245,7 +258,11 @@ function CreateNPC(npcData)
     end
 
     -- DPS 2026-09-27: pose for this spot (schedule slot `scenario` or npcData.scenario)
-    ApplyNPCScenario(npc, npcData)
+    if npcData.crowd then
+        CrowdPose(npc, npcData, spawnCoords, crowdSit)
+    else
+        ApplyNPCScenario(npc, npcData)
+    end
 
     -- Release model from memory (entity keeps its own reference)
     SetModelAsNoLongerNeeded(npcData.model)
@@ -270,6 +287,74 @@ function CreateNPC(npcData)
     print(("[AI NPCs] Spawned NPC: %s at %.1f, %.1f, %.1f"):format(
         npcData.name, spawnCoords.x, spawnCoords.y, spawnCoords.z
     ))
+end
+
+-----------------------------------------------------------
+-- CROWDS (real-people pass 2026-09-27): random spots around a bar, sitters on the real
+-- stools and chairs (nearest scenario point), standers at clear floor spots with a pose.
+-----------------------------------------------------------
+local CROWD_STAND_SCENARIOS = { "WORLD_HUMAN_DRINKING", "WORLD_HUMAN_HANG_OUT_STREET", "WORLD_HUMAN_LEANING", "WORLD_HUMAN_STAND_MOBILE", "WORLD_HUMAN_STAND_IMPATIENT", "WORLD_HUMAN_DRINKING" }
+
+local function crowdFloorClear(center, x, y, z)
+    -- A wall between the centre and the spot means the spot is in another room or outside.
+    local ray = StartShapeTestRay(center.x, center.y, center.z + 0.6, x, y, z + 0.6, 1 + 16, 0, 7)
+    local _, hit = GetShapeTestResult(ray)
+    return hit == 0
+end
+
+local function crowdTooClose(key, x, y)
+    for id, info in pairs(spawnedNPCs) do
+        if info.data.crowd and info.data.crowd.key == key and DoesEntityExist(info.entity) then
+            local p = GetEntityCoords(info.entity)
+            if #(vector3(p.x, p.y, 0) - vector3(x, y, 0)) < 1.4 then return true end
+        end
+    end
+    return false
+end
+
+function CrowdSpawnPoint(npcData)
+    local crowd = Config.Crowds and Config.Crowds[npcData.crowd.key]
+    if not crowd then return nil end
+    local c = crowd.center
+    local center = vector3(c.x, c.y, c.z)
+    local wantSit = npcData.crowd.sit
+    -- Sitters spawn near the counter and warp into the nearest seat scenario (stool, chair).
+    if wantSit and crowd.counter then
+        local cc = crowd.counter
+        for _ = 1, 8 do
+            local x = cc.x + (math.random() - 0.5) * 6.0
+            local y = cc.y + (math.random() - 0.5) * 6.0
+            if not crowdTooClose(npcData.crowd.key, x, y) and crowdFloorClear(center, x, y, cc.z) then
+                return vector4(x, y, cc.z, math.random(0, 359) + 0.0), true
+            end
+        end
+    end
+    for _ = 1, 14 do
+        local angle = math.random() * 2 * math.pi
+        local dist = 1.5 + math.random() * (crowd.radius - 1.5)
+        local x = center.x + math.cos(angle) * dist
+        local y = center.y + math.sin(angle) * dist
+        if not crowdTooClose(npcData.crowd.key, x, y) and crowdFloorClear(center, x, y, center.z) then
+            local heading = math.deg(math.atan(center.y - y, center.x - x)) - 90.0 + (math.random() - 0.5) * 60.0
+            return vector4(x, y, center.z, heading), false
+        end
+    end
+    return vector4(center.x, center.y, center.z, c.w or 0.0), false
+end
+
+function CrowdPose(entity, npcData, spot, trySit)
+    if trySit then
+        -- Nearest seat scenario within 3 m (vanilla bars have them on every stool); warp in.
+        TaskUseNearestScenarioToCoordWarp(entity, spot.x, spot.y, spot.z, 3.0, -1)
+        CreateThread(function()
+            Wait(1500)
+            if DoesEntityExist(entity) and not IsPedUsingAnyScenario(entity) then
+                TaskStartScenarioInPlace(entity, CROWD_STAND_SCENARIOS[math.random(#CROWD_STAND_SCENARIOS)], 0, true)
+            end
+        end)
+        return
+    end
+    TaskStartScenarioInPlace(entity, CROWD_STAND_SCENARIOS[math.random(#CROWD_STAND_SCENARIOS)], 0, true)
 end
 
 function AddNPCTarget(npc, npcData)

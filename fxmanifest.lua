@@ -10,7 +10,8 @@ shared_scripts {
     '@ox_lib/init.lua',
     '@dps-badpeds/shared/characters.lua',  -- Shared character pool
     'config.lua',
-    'quests.lua'
+    'quests.lua',
+    'data/crowds.lua'             -- real-people pass: bar crowds, appended to Config.NPCs on both sides
 }
 
 client_scripts {

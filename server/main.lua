@@ -167,6 +167,9 @@ function IsPlayerNearNPC(playerId, npcId)
         if movement.pattern == "wander" then
             local wander = Config.Movement and Config.Movement.patterns and Config.Movement.patterns.wander
             allowed = allowed + ((wander and wander.radius) or 0)
+        elseif movement.pattern == "crowd" then
+            -- crowd members stand anywhere within their bar's radius of the centre
+            allowed = allowed + (tonumber(movement.radius) or 10.0)
         end
         if type(movement.locations) == "table" then
             for _, loc in ipairs(movement.locations) do
