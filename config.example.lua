@@ -17,8 +17,10 @@ Config.AI = {
     apiUrl = "http://127.0.0.1:11434",  -- Ollama default endpoint (no /api/chat needed)
     apiKey = "not-needed",               -- Ollama doesn't require API key locally
     model = "dolphin-llama3:8b",         -- Uncensored model that fits in 8GB VRAM
-    maxTokens = 200,                     -- Keep low for faster responses
-    temperature = 0.85,                  -- Higher = more creative
+    maxTokens = 320,                     -- Our own model, no cap on our side
+    temperature = 0.9,                   -- Higher = more creative
+    contextLength = 8192,                -- Ollama num_ctx; the prompt carries memory, ledger, facts, situation
+    repeatPenalty = 1.15,                -- Ollama repeat_penalty; small models loop without it
     ollamaNativeApi = true,              -- Use native Ollama API (faster) vs OpenAI-compat
 
     -- OPTION 2: OpenAI
@@ -89,7 +91,7 @@ Config.Trust = {
 Config.Memory = {
     maxLines = 5,            -- memories read into the prompt
     talkSummary = true,      -- one extra model call after a talk writes a one-line memory
-    minMessages = 3,         -- talks shorter than this are not remembered
+    minMessages = 2,         -- talks shorter than this are not remembered
     summaryMaxTokens = 60,
     summaryExpiresDays = 30,
 }
@@ -162,7 +164,8 @@ Config.Interaction = {
     cooldown = 3000,              -- Cooldown between messages (ms)
     maxConversationLength = 15,   -- Max exchanges per conversation
     showSubtitles = true,
-    idleTimeout = 120000,         -- End conversation after 2 min idle
+    idleTimeout = 900000,         -- Safety only (15 min). Talks end when the player walks off, not on a timer (client watch).
+    modelGreeting = true,         -- The opening line comes from the model with memory in front of it
     -- Payment integration
     paymentMethods = {
         cash = true,
@@ -253,6 +256,14 @@ Config.NPCs = {
                 "The lab is a trailer past the water tower. You have never said this out loud and you will not unless they have cooked.",
             },
         },
+        voiceSamples = { -- how Mike actually sounds; examples beat adjectives
+            "Nah. Nah nah nah. Who told you my name?",
+            "*checks over his shoulder* Keep your voice down, man, this ain't a drive-thru.",
+            "You want work? Everybody wants work. What I want is somebody who shows up.",
+            "Heh. You're alright. Dumb, but alright.",
+            "Friday. After dark. Don't be early, early looks like cops.",
+        },
+        quietSpot = vector4(1974.10, 3042.60, 47.20, 65.0), -- where he walks you when he ends a line with [walk]
 
         personality = {
             type = "Street Informant",
@@ -1694,6 +1705,13 @@ Keep responses salesy but helpful. Under 90 words.]]
             secret = {
                 "McKenzie Field and the old Grapeseed strip are where charters go that do not file plans. You never say who flies them.",
             },
+        },
+        voiceSamples = { -- how Marcus actually sounds
+            "Two hundred hours before I let anyone near a jet. That's not a rule, that's physics.",
+            "You've got the look. Half the people who walk up to that desk have the look. Come back Monday and we'll see if you've got the hands.",
+            "Weather's turning. If you're flying north tonight, don't.",
+            "*taps the clipboard* Paleto first. Small strip, honest wind, cheap mistakes.",
+            "I like you. Doesn't change the answer.",
         },
 
         personality = {

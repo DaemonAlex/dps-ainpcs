@@ -1,0 +1,72 @@
+--[[
+    ON MY MIND TODAY (real-people pass, 2026-09-27)
+    One small thing per NPC per day, picked deterministically from these by trust category
+    (server/systems/situation.lua OnMindToday). Same line for every player that day.
+    Plain sentences the model can colour a talk with. Nothing here is a secret or a lead.
+]]
+OnMind = {
+    everyone = {
+        "Your rent is due at the end of the week and you are short.",
+        "You slept badly. Everything is a little louder than it should be.",
+        "Somebody owes you forty bucks and keeps dodging you.",
+        "Your phone screen cracked this morning and it annoys you every time you look at it.",
+        "You had a good breakfast for once and you are in a decent mood.",
+        "A cousin called last night asking for money again.",
+        "The weather has your knee aching.",
+        "You saw a car you used to own drive past and it got to you.",
+        "Your neighbour's dog barked half the night.",
+        "You are trying to quit smoking and it is not going well.",
+        "You got a parking ticket you think was unfair.",
+        "Someone you have not seen in years texted you out of nowhere.",
+        "You are hungry and thinking about where to eat later.",
+        "You won twenty bucks on a scratch card and feel lucky.",
+        "Your shoes are soaked from a puddle and you are done with today.",
+        "You have a headache that will not go.",
+        "Tomorrow is your day off and you cannot wait.",
+        "A friend is in the hospital and you keep meaning to visit.",
+        "You are waiting on a call that has not come.",
+        "You watched a fight outside earlier and are still a bit wired.",
+    },
+    criminal = {
+        "The cops have been driving past twice as often as usual and you notice.",
+        "Somebody in your circle got picked up last week and you do not know what they said.",
+        "You are holding more than you like right now and want it moved.",
+        "A buyer stiffed you and you want the money back without making noise.",
+        "You heard a name you did not want to hear again.",
+        "Your usual spot had a patrol car parked on it this morning.",
+        "You are one good week away from clearing a debt to someone patient.",
+        "A new face has been asking questions around the block and you do not like it.",
+        "Your burner has three missed calls you have not returned.",
+        "You got a tip that turned out to be nothing and you feel stupid for chasing it.",
+    },
+    drugs = {
+        "Supply is thin this week and everybody is asking you why.",
+        "You are waiting on a delivery that is a day late.",
+        "One of your regulars has not shown in a while and you wonder if they got clean or got caught.",
+        "You had to move a stash last night and your back hurts.",
+        "A rival crew is selling cheaper two blocks over.",
+        "You tested a batch that was better than it should be and you are suspicious of why.",
+        "Someone offered you a bigger cut for a riskier route and you are still thinking about it.",
+    },
+    legitimate = {
+        "A regular customer did not come in today and you wonder if something happened.",
+        "Head office sent a memo that changes nothing and wasted your morning.",
+        "You have a performance review coming and you hate them.",
+        "A tourist asked you the same question four times today.",
+        "You are counting the days to a holiday you have not booked yet.",
+        "The coffee machine at work broke and everyone is miserable.",
+        "You helped someone earlier and it actually felt good.",
+        "You have paperwork waiting that you have been avoiding for a week.",
+        "Someone left a generous tip and made your day.",
+        "You are training a new hire who does not listen.",
+    },
+    social = {
+        "You have gossip you are dying to share with someone.",
+        "You had a date last night and you are not sure how it went.",
+        "You lost a bet on a game and still feel it.",
+        "You are planning a night out and looking for company.",
+        "You saw someone famous, or thought you did, and cannot let it go.",
+        "You heard a song this morning that put you in a mood.",
+        "You are bored out of your mind and glad someone came to talk.",
+    },
+}

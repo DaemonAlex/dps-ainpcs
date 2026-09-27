@@ -755,10 +755,51 @@ RegisterNetEvent('ai-npcs:server:startConversation', function(npcId)
     }
 
     -- Build contextual greeting
-    local greeting = BuildContextualGreeting(npc, playerContext, trustLevel)
+    local talkCount = MySQL.scalar.await([[
+        SELECT conversation_count FROM ai_npc_trust WHERE citizenid = ? AND npc_id = ?
+    ]], { identifier, npcId }) or 0
+    local greeting = BuildContextualGreeting(npc, playerContext, trustLevel, talkCount)
 
-    -- Send greeting
-    TriggerClientEvent('ai-npcs:client:receiveMessage', src, greeting, npc.id)
+    -- Real-people pass: the opening line comes from the model with memory, situation and
+    -- facts in front of it, so a face that knows you greets you like it. Static line is the
+    -- fallback when the model is down or slow.
+    local conversation = activeConversations[src]
+    local useModel = Config.Interaction.modelGreeting and RequestModelText and BuildContextualSystemPrompt and conversation
+    if useModel then
+        local sent = false
+        local function deliver(line, gesture)
+            if sent or activeConversations[src] ~= conversation then return end
+            sent = true
+            table.insert(conversation.conversationHistory, { role = "assistant", content = line })
+            TriggerClientEvent('ai-npcs:client:receiveMessage', src, line, npc.id, false, gesture)
+        end
+        local ok = pcall(function()
+            local systemPrompt = BuildContextualSystemPrompt(npc, playerContext, conversation)
+            local ask = (talkCount > 0)
+                and "They just walked up to you again. Say your first line to them, in character, the way you would greet someone you have met before. One or two sentences, then one gesture tag."
+                or "A stranger just walked up to you. Say your first line to them, in character. One or two sentences, then one gesture tag."
+            RequestModelText(systemPrompt, { { role = "user", content = ask } }, 90, function(text)
+                if type(text) ~= "string" or #text < 2 then return deliver(greeting) end
+                text = CleanAIResponse and CleanAIResponse(text) or text
+                local gesture
+                local tag = text:match("%[([%a_]+)%]%s*$")
+                if tag then
+                    tag = tag:lower()
+                    for _, g in ipairs(GESTURE_TAGS or {}) do if g == tag then gesture = g break end end
+                    text = text:gsub("%s*%[[%a_]+%]%s*$", "")
+                end
+                text = text:gsub("%s*%[[%a_]+%]", "")
+                text = text:match("^%s*(.-)%s*$") or text
+                if #text < 2 then return deliver(greeting) end
+                deliver(text, gesture)
+            end)
+        end)
+        if not ok then deliver(greeting) end
+        -- If the model has not answered in 6 s, the static line goes out and the model line is dropped.
+        SetTimeout(6000, function() deliver(greeting) end)
+    else
+        TriggerClientEvent('ai-npcs:client:receiveMessage', src, greeting, npc.id)
+    end
 
     -- Add trust for visiting (H1: rate-limited per NPC per player so it can't
     -- be farmed by repeatedly re-opening the conversation).
@@ -777,8 +818,20 @@ RegisterNetEvent('ai-npcs:server:startConversation', function(npcId)
     ))
 end)
 
-function BuildContextualGreeting(npc, playerContext, trustLevel)
+function BuildContextualGreeting(npc, playerContext, trustLevel, talkCount)
     local greeting = npc.personality.greeting
+
+    -- Mold engine: someone who has been here before never gets the first-meeting line again.
+    talkCount = tonumber(talkCount) or 0
+    if talkCount > 0 and not playerContext.isCop then
+        if npc.personality.greetingReturn then
+            greeting = npc.personality.greetingReturn
+        elseif trustLevel == "Acquaintance" then
+            greeting = "*nods* Back again. What's up?"
+        else
+            greeting = "*looks you over* You were here before. What is it this time?"
+        end
+    end
 
     -- Modify greeting based on context
     if playerContext.isCop then
@@ -926,6 +979,8 @@ AddEventHandler('playerDropped', function()
     end
 
     if conversation then
+        -- Mold engine: a dropped connection is not the NPC forgetting the talk
+        if SummarizeConversation then SummarizeConversation(conversation) end
         FlushTrustForPlayer(conversation.identifier)
         UnlockNPC(conversation.npcId, src)
         activeConversations[src] = nil
@@ -1028,6 +1083,8 @@ CreateThread(function()
             if currentTime - conversation.lastActivity > Config.Interaction.idleTimeout then
                 TriggerClientEvent('ai-npcs:client:endConversation', playerId,
                     "Looks like you've got other things on your mind... We'll talk later.")
+                -- Mold engine: an idle-ended talk still counts as a talk the NPC remembers
+                if SummarizeConversation then SummarizeConversation(conversation) end
                 UnlockNPC(conversation.npcId, playerId)
                 activeConversations[playerId] = nil
                 print(("[AI NPCs] Auto-ended idle conversation for player %s"):format(playerId))

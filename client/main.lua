@@ -744,6 +744,70 @@ end
 -----------------------------------------------------------
 -- CONVERSATION SYSTEM
 -----------------------------------------------------------
+-- DPS 2026-09-27 real-people pass: the model may end a line with [walk]. Only NPCs with a
+-- quiet spot (schedule slot `quiet = vector4` or npcData.quietSpot) are offered the tag; the
+-- ped then paths there properly and the talk stays open while the player follows.
+function NPCQuietSpot(npcInfo)
+    local data = npcInfo.data
+    if data.movement and data.movement.locations then
+        local hour = GetClockHours()
+        for _, slot in ipairs(data.movement.locations) do
+            local t = slot.time
+            if t and slot.coords and slot.quiet then
+                local from, to = t[1], t[2]
+                local inSlot = (from <= to) and (hour >= from and hour < to) or (from > to and (hour >= from or hour < to))
+                if inSlot then return slot.quiet end
+            end
+        end
+    end
+    return data.quietSpot
+end
+
+function WalkNPCToQuiet(npcInfo)
+    if not npcInfo or npcInfo.walking then return end
+    local quiet = NPCQuietSpot(npcInfo)
+    local entity = npcInfo.entity
+    if not quiet or not DoesEntityExist(entity) then return end
+    npcInfo.walking = true
+    CreateThread(function()
+        ClearPedTasks(entity)
+        Wait(100)
+        TaskFollowNavMeshToCoord(entity, quiet.x, quiet.y, quiet.z, 1.0, -1, 0.4, false, quiet.w or 0.0)
+        local started = GetGameTimer()
+        while DoesEntityExist(entity) and activeConversation and activeConversation.npcId == npcInfo.data.id do
+            Wait(250)
+            local pos = GetEntityCoords(entity)
+            if #(pos - vector3(quiet.x, quiet.y, quiet.z)) < 1.3 or GetGameTimer() - started > 30000 then break end
+        end
+        npcInfo.walking = false
+        if DoesEntityExist(entity) and activeConversation and activeConversation.npcId == npcInfo.data.id then
+            ClearPedTasks(entity)
+            FaceThePlayer(entity)
+            PlayTalkingFace(entity)
+        end
+    end)
+end
+
+-- Ends the talk when the player actually leaves, the way a person would notice: more than
+-- 7 m away for three seconds (15 m while the NPC is walking them somewhere).
+function StartConversationWatch(npcId)
+    CreateThread(function()
+        local away = 0
+        while activeConversation and activeConversation.npcId == npcId do
+            Wait(1000)
+            local npcInfo = spawnedNPCs[npcId]
+            if not npcInfo or not DoesEntityExist(npcInfo.entity) then break end
+            local limit = npcInfo.walking and 15.0 or 7.0
+            local dist = #(GetEntityCoords(PlayerPedId()) - GetEntityCoords(npcInfo.entity))
+            if dist > limit then away = away + 1 else away = 0 end
+            if away >= 3 then
+                EndConversation()
+                break
+            end
+        end
+    end)
+end
+
 function StartConversation(npcId)
     if activeConversation then
         exports['ox_lib']:notify({
@@ -797,6 +861,7 @@ function StartConversation(npcId)
         npc = npcInfo.data,
         paymentMade = 0
     }
+    StartConversationWatch(npcId)
 
     -- Start conversation on server
     TriggerServerEvent('ai-npcs:server:startConversation', npcId)
@@ -1140,7 +1205,12 @@ RegisterNetEvent('ai-npcs:client:receiveMessage', function(message, npcId, isNet
 
     local convoNpc = spawnedNPCs[npcId]
     if convoNpc and convoNpc.entity and DoesEntityExist(convoNpc.entity) then
-        PlayNPCGesture(convoNpc.entity, gesture)
+        if gesture == 'walk' then
+            PlayNPCGesture(convoNpc.entity, 'come_here')
+            WalkNPCToQuiet(convoNpc)
+        else
+            PlayNPCGesture(convoNpc.entity, gesture)
+        end
     end
 
     SendNUIMessage({

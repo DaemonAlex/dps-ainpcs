@@ -53,3 +53,23 @@ eq("engine ignores nil citizen", #MySQL.__writes, 1)
 GetNPCMemories = function() return {} end
 MySQL.__scalars = {}
 eq("context empty for stranger", BuildMemoryContext("a", "cid1"), "")
+
+-- transcripts
+MySQL.__writes = {}
+json.encode = function(t) return "ENC" .. #t end
+ArchiveConversation({ identifier = "cid1", npcId = "a", npc = { homeLocation = { x = 1.26, y = 2.5, z = 0 } },
+    conversationHistory = { { role = "user", content = "hi" }, { role = "assistant", content = "yo" }, { role = "system", content = "x" } } })
+eq("archive written", #MySQL.__writes, 1)
+eq("archive count skips system", MySQL.__writes[1].params[3], 2)
+eq("archive place", MySQL.__writes[1].params[4], "1.3,2.5")
+ArchiveConversation({ identifier = "cid1", npcId = "a", conversationHistory = {} })
+eq("archive skips empty", #MySQL.__writes, 1)
+
+eq("recap empty", FormatRecapBlock({}, 1), "")
+local recap = FormatRecapBlock({ { who = "player", text = "you got work?" }, { who = "npc", text = "maybe, who is asking" }, { who = "player", text = "me" }, { who = "npc", text = "come back friday" }, { who = "player", text = "ok" } }, 2)
+check("recap header", recap:find("LAST TIME YOU TALKED (2 days ago)", 1, true))
+check("recap they said", recap:find('They said: "me"', 1, true))
+check("recap you said", recap:find('You said: "come back friday"', 1, true))
+check("recap drops oldest", not recap:find("you got work", 1, true))
+MySQL.__rows = {}
+eq("recap ctx empty", BuildRecapContext("a", "cid1"), "")

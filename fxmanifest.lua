@@ -25,6 +25,8 @@ server_scripts {
     'server/systems/memory.lua',  -- mold engine: what the NPC remembers about a character
     'server/systems/ledger.lua',  -- mold engine: what the NPC heard lately (city records as hearsay)
     'server/systems/facts.lua',   -- mold engine: written facts per trust tier
+    'data/onmind.lua',            -- real-people pass: one thing on each NPC's mind per day
+    'server/systems/situation.lua', -- real-people pass: where the NPC is, what it is doing, everyday basics
     'server/ai_handler.lua',
     -- v2.5 Systems
     'server/systems/rumor_mill.lua',
