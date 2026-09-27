@@ -17,6 +17,10 @@ Config.Crowds = {
         center = vector4(1998.04, 3054.68, 47.06, 203.2),  -- DPS 2026-09-27 Damon: "spawn them in the lot not on the roof" (/spot yj-lot #179)
         counter = nil,                                     -- no counter outside: sitters take a bench if one is near, else they stand
         radius = 12.0,
+        -- Damon 2026-09-27: "I will spot some stools and seats so you can get people in those". Sitters take a free
+        -- one of these (vector4, heading = the way the seat faces) with a proper sit scenario; standers stay random.
+        seats = {
+        },
         -- DPS 2026-09-27 Damon: "stop a_f_m_salton_01 from spawning there in the 1983.45 3049.82 47.21" — that is
         -- the bartender's side of the counter. No regular spawns within this radius of these points.
         keepOut = { { pos = vector3(1983.45, 3049.82, 47.21), radius = 3.0 } },

@@ -212,9 +212,10 @@ function CreateNPC(npcData)
     end
 
     -- Crowd members take a random spot around their bar instead of the shared centre.
-    local crowdSit = false
+    local crowdSit, crowdSeat = false, false
     if npcData.crowd then
-        local pt, sit = CrowdSpawnPoint(npcData)
+        local pt, sit, seat = CrowdSpawnPoint(npcData)
+        crowdSeat = seat
         if not pt then return end
         spawnCoords = pt
         crowdSit = sit
@@ -259,7 +260,7 @@ function CreateNPC(npcData)
 
     -- DPS 2026-09-27: pose for this spot (schedule slot `scenario` or npcData.scenario)
     if npcData.crowd then
-        CrowdPose(npc, npcData, spawnCoords, crowdSit)
+        CrowdPose(npc, npcData, spawnCoords, crowdSit, crowdSeat)
     else
         ApplyNPCScenario(npc, npcData)
     end
@@ -295,6 +296,13 @@ end
 -----------------------------------------------------------
 local CROWD_STAND_SCENARIOS = { "WORLD_HUMAN_DRINKING", "WORLD_HUMAN_HANG_OUT_STREET", "WORLD_HUMAN_LEANING", "WORLD_HUMAN_STAND_MOBILE", "WORLD_HUMAN_STAND_IMPATIENT", "WORLD_HUMAN_DRINKING" }
 
+-- DPS 2026-09-27 (Damon: "dude on the roof"): the spot must be at the crowd's own floor height, probed from just above it.
+local function crowdFloorZ(center, x, y)
+    local found, gz = GetGroundZFor_3dCoord(x, y, center.z + 2.0, false)
+    if not found or math.abs(gz - center.z) > 1.5 then return nil end
+    return gz
+end
+
 local function crowdFloorClear(center, x, y, z)
     -- A wall between the centre and the spot means the spot is in another room or outside.
     local ray = StartShapeTestRay(center.x, center.y, center.z + 0.6, x, y, z + 0.6, 1 + 16, 0, 7)
@@ -325,6 +333,18 @@ function CrowdSpawnPoint(npcData)
     local c = crowd.center
     local center = vector3(c.x, c.y, c.z)
     local wantSit = npcData.crowd.sit
+    -- Hand-marked seats (crowd.seats): sitters take a free one, in random order.
+    if wantSit and crowd.seats and #crowd.seats > 0 then
+        local order = {}
+        for i = 1, #crowd.seats do order[i] = i end
+        for i = #order, 2, -1 do local j = math.random(i); order[i], order[j] = order[j], order[i] end
+        for _, i in ipairs(order) do
+            local s = crowd.seats[i]
+            if not crowdTooClose(npcData.crowd.key, s.x, s.y) then
+                return vector4(s.x, s.y, s.z, s.w or 0.0), true, true
+            end
+        end
+    end
     -- Hand-set spot wins over everything (data/crowds.lua persona.spot)
     if npcData.crowd.spot then
         local s = npcData.crowd.spot
@@ -346,15 +366,21 @@ function CrowdSpawnPoint(npcData)
         local dist = 1.5 + math.random() * (crowd.radius - 1.5)
         local x = center.x + math.cos(angle) * dist
         local y = center.y + math.sin(angle) * dist
-        if not crowdKeptOut(crowd, x, y) and not crowdTooClose(npcData.crowd.key, x, y) and crowdFloorClear(center, x, y, center.z) then
+        local gz = crowdFloorZ(center, x, y)
+        if gz and not crowdKeptOut(crowd, x, y) and not crowdTooClose(npcData.crowd.key, x, y) and crowdFloorClear(center, x, y, gz) then
             local heading = math.deg(math.atan(center.y - y, center.x - x)) - 90.0 + (math.random() - 0.5) * 60.0
-            return vector4(x, y, center.z, heading), false
+            return vector4(x, y, gz, heading), false
         end
     end
     return vector4(center.x, center.y, center.z, c.w or 0.0), false
 end
 
-function CrowdPose(entity, npcData, spot, trySit)
+function CrowdPose(entity, npcData, spot, trySit, markedSeat)
+    if markedSeat then
+        -- A hand-marked stool or chair: sit exactly there, facing the marked heading.
+        TaskStartScenarioAtPosition(entity, "PROP_HUMAN_SEAT_CHAIR_MP_PLAYER", spot.x, spot.y, spot.z, spot.w, 0, true, true)
+        return
+    end
     if trySit then
         -- Nearest seat scenario within 3 m (vanilla bars have them on every stool); warp in.
         TaskUseNearestScenarioToCoordWarp(entity, spot.x, spot.y, spot.z, 3.0, -1)
