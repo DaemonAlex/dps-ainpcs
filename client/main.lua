@@ -505,6 +505,7 @@ function StrollAroundSpot(npcInfo, spot, currentTime)
 
     local entity = npcInfo.entity
     local radius = (spot.wander or 7.0) + 0.0
+    if radius < 3.5 then return end -- posted indoors (wander = 0): never stroll through counters and walls
     local angle = math.random() * 2 * math.pi
     local d = 3.0 + math.random() * (radius - 3.0)
     local tx, ty = spot.x + math.cos(angle) * d, spot.y + math.sin(angle) * d
@@ -1196,7 +1197,7 @@ function FaceThePlayer(entity)
     TaskTurnPedToFaceEntity(entity, PlayerPedId(), -1)
 end
 
-local function PlayTalkingFace(entity)
+function PlayTalkingFace(entity)
     if not DoesEntityExist(entity) then return end
     RequestAnimDict("mp_facial")
     local waited = 0
@@ -1233,10 +1234,11 @@ local function PlayNPCSound(entity, gesture)
     PlayPedAmbientSpeechNative(entity, speech, 'SPEECH_PARAMS_FORCE_NORMAL')
 end
 
-local function PlayNPCGesture(entity, gesture)
+function PlayNPCGesture(entity, gesture)
     if not gesture or not entity or not DoesEntityExist(entity) then return end
     PlayNPCSound(entity, gesture)
     local clip = GESTURE_CLIPS[gesture]
+    print(("[AI NPCs] gesture %s -> %s on %s"):format(tostring(gesture), tostring(clip), tostring(entity)))
     if not clip then return end
     local dict = IsPedMale(entity) and 'gestures@m@standing@casual' or 'gestures@f@standing@casual'
     CreateThread(function()
@@ -1519,6 +1521,22 @@ RegisterNetEvent('ai-npcs:client:questCompleted', function(data)
 end)
 
 -- Convenience command to review/report active jobs from anywhere
+-- DPS 2026-09-27 debug: /npcgesture shrug  plays a gesture on the nearest AI NPC so the clips can be checked by eye.
+RegisterCommand('npcgesture', function(_, args)
+    local tag = args[1] or 'shrug'
+    local me = GetEntityCoords(PlayerPedId())
+    local best, bestD = nil, 12.0
+    for _, info in pairs(spawnedNPCs) do
+        if DoesEntityExist(info.entity) then
+            local d = #(GetEntityCoords(info.entity) - me)
+            if d < bestD then best, bestD = info, d end
+        end
+    end
+    if not best then print('[AI NPCs] no AI NPC within 12 m') return end
+    print(("[AI NPCs] test gesture %s on %s"):format(tag, best.data.name))
+    PlayNPCGesture(best.entity, tag)
+end, false)
+
 RegisterCommand('myjobs', function()
     TriggerServerEvent('ai-npcs:server:getMyQuests')
 end, false)

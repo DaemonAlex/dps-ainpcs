@@ -263,7 +263,7 @@ Config.NPCs = {
             "Heh. You're alright. Dumb, but alright.",
             "Friday. After dark. Don't be early, early looks like cops.",
         },
-        quietSpot = vector4(1974.10, 3042.60, 47.20, 65.0), -- where he walks you when he ends a line with [walk]
+        -- quietSpot = vector4(x, y, z, heading), -- where he walks you when he ends a line with [walk]; mark it in game first
 
         personality = {
             type = "Street Informant",
