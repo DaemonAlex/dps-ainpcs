@@ -594,10 +594,18 @@ function GetPlayerContext(playerId)
     local special = Config.PlayerContext.specialItems or {}
     local function playerHasAny(itemList)
         if not itemList or #itemList == 0 then return false end
-        local ok, count = pcall(function()
+        local ok, found = pcall(function()
             return exports.ox_inventory:Search(playerId, 'count', itemList)
         end)
-        return ok and (count or 0) > 0
+        if not ok or not found then return false end
+        -- Search returns a number for a single item, a { name = count } table
+        -- for a list, and false when nothing matched.
+        if type(found) == 'number' then return found > 0 end
+        if type(found) ~= 'table' then return false end
+        for _, c in pairs(found) do
+            if (tonumber(c) or 0) > 0 then return true end
+        end
+        return false
     end
 
     context.hasDrugs      = playerHasAny(special.drugs)

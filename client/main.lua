@@ -6,6 +6,11 @@ local spawnedNPCs = {}
 local activeConversation = nil
 local conversationCooldown = false
 local npcMovementThreads = {}
+-- Distance-gated spawning (2026-09-05): one ox_lib point per NPC. The NPC ped
+-- exists only while a player is inside the point. Replaces the old behaviour of
+-- creating every configured NPC across the whole map the moment a player loaded.
+local npcPoints = {}
+local SPAWN_DISTANCE = (Config.Movement and Config.Movement.spawnDistance) or 120.0
 
 -----------------------------------------------------------
 -- KVP-BASED CLIENT PREFERENCES (Persistent Storage)
@@ -126,7 +131,52 @@ end)
 -----------------------------------------------------------
 function SpawnNPCs()
     for _, npcData in pairs(Config.NPCs) do
-        CreateNPC(npcData)
+        RegisterNPCPoint(npcData)
+    end
+end
+
+-- One ox_lib point per NPC at its current (schedule-aware) location.
+-- onEnter creates the ped, onExit removes it. Re-registered on despawn so
+-- schedule-pattern NPCs get a point at their current spot.
+function RegisterNPCPoint(npcData)
+    local coords = GetNPCCurrentLocation(npcData)
+    if not coords then return end
+    if npcPoints[npcData.id] then
+        npcPoints[npcData.id]:remove()
+        npcPoints[npcData.id] = nil
+    end
+    if npcPoints[npcData.id .. ":hail"] then
+        npcPoints[npcData.id .. ":hail"]:remove()
+        npcPoints[npcData.id .. ":hail"] = nil
+    end
+    local point = lib.points.new({
+        coords = vec3(coords.x, coords.y, coords.z),
+        distance = SPAWN_DISTANCE,
+        npcId = npcData.id,
+    })
+    function point:onEnter()
+        if not spawnedNPCs[npcData.id] then
+            CreateNPC(npcData)
+        end
+    end
+    function point:onExit()
+        if spawnedNPCs[npcData.id] then
+            DespawnNPC(npcData.id, true)
+        end
+    end
+    npcPoints[npcData.id] = point
+
+    -- DPS 2026-09-27: some NPCs call you over when you walk past (npcData.hail).
+    if npcData.hail then
+        local hailPoint = lib.points.new({
+            coords = vec3(coords.x, coords.y, coords.z),
+            distance = npcData.hail.distance or 9.0,
+            npcId = npcData.id,
+        })
+        function hailPoint:onEnter()
+            HailPlayer(npcData.id)
+        end
+        npcPoints[npcData.id .. ":hail"] = hailPoint
     end
 end
 
@@ -141,6 +191,13 @@ function CreateNPC(npcData)
     -- Get spawn location based on schedule or home
     local spawnCoords = GetNPCCurrentLocation(npcData)
     if not spawnCoords then return end
+
+    -- Never create a ped the player is not near: the point's onEnter will do it
+    -- when they arrive. Guards every other caller (schedule loop, culled-entity
+    -- respawn) that used to spawn map-wide.
+    if #(GetEntityCoords(PlayerPedId()) - vec3(spawnCoords.x, spawnCoords.y, spawnCoords.z)) > SPAWN_DISTANCE then
+        return
+    end
 
     RequestModel(npcData.model)
     local modelTimeout = 0
@@ -579,7 +636,7 @@ function HandleScheduleMovement(npcId, npcInfo, currentTime)
     end
 end
 
-function DespawnNPC(npcId)
+function DespawnNPC(npcId, byDistance)
     local npcInfo = spawnedNPCs[npcId]
     if not npcInfo then return end
 
@@ -593,9 +650,15 @@ function DespawnNPC(npcId)
     end
 
     spawnedNPCs[npcId] = nil
-    ScheduleNPCSpawn(npcInfo.data)
-
-    print(("[AI NPCs] Despawned NPC: %s (schedule)"):format(npcInfo.data.name))
+    if byDistance then
+        print(("[AI NPCs] Despawned NPC: %s (out of range)"):format(npcInfo.data.name))
+    else
+        -- schedule closed: refresh the point at the NPC's next location and
+        -- keep the 60 s schedule check so it comes back when its window opens
+        RegisterNPCPoint(npcInfo.data)
+        ScheduleNPCSpawn(npcInfo.data)
+        print(("[AI NPCs] Despawned NPC: %s (schedule)"):format(npcInfo.data.name))
+    end
 end
 
 -----------------------------------------------------------
@@ -629,14 +692,13 @@ function StartConversation(npcId)
         npcInfo.isMoving = false
         npcInfo.inConversation = true
 
-        -- Face the player
-        local playerCoords = GetEntityCoords(PlayerPedId())
-        local npcCoords = GetEntityCoords(npcInfo.entity)
-        local heading = GetHeadingFromVector_2d(playerCoords.x - npcCoords.x, playerCoords.y - npcCoords.y)
-        SetEntityHeading(npcInfo.entity, heading)
+        -- Face the player. DPS 2026-09-27: the old one-shot heading set lost to the scenario the
+        -- ped was still leaving, so he stood with his back to you. Turn as a task first, then pin.
+        FreezeEntityPosition(npcInfo.entity, false)
+        FaceThePlayer(npcInfo.entity)
 
-        -- Freeze NPC in place during conversation
-        FreezeEntityPosition(npcInfo.entity, true)
+        -- Not frozen any more: the movement loop already skips NPCs in conversation, and a
+        -- frozen ped cannot turn. The turn task above holds him in place facing you.
 
         -- Play idle talking animation
         RequestAnimDict("mp_facial")
@@ -869,13 +931,137 @@ end)
 -----------------------------------------------------------
 -- SERVER EVENTS
 -----------------------------------------------------------
-RegisterNetEvent('ai-npcs:client:receiveMessage', function(message, npcId, isNetworked)
+-- DPS 2026-09-27: gesture tags from the model -> upper-body clips on the NPC.
+-- Every clip is in the vanilla gestures dictionaries, so nothing to stream.
+local GESTURE_CLIPS = {
+    shrug     = 'gesture_shrug_hard',
+    nod       = 'gesture_nod_yes_hard',
+    no        = 'gesture_nod_no_hard',
+    point     = 'gesture_point',
+    wave_off  = 'gesture_displeased',
+    easy      = 'gesture_easy_now',
+    you       = 'gesture_you_hard',
+    hello     = 'gesture_hello',
+    damn      = 'gesture_damn',
+    come_here = 'gesture_come_here_soft',
+    -- reactions to what the player said
+    laugh     = 'gesture_shrug_soft',
+    shocked   = 'gesture_damn',
+    grunt     = 'gesture_displeased',
+}
+
+-- Turn the NPC toward the player: as a task (so the body actually rotates), then pin the
+-- heading so nothing the ped was doing before can turn it back.
+function FaceThePlayer(entity)
+    if not entity or not DoesEntityExist(entity) then return end
+    -- A turn task with no end keeps him facing you for the whole talk, even if you walk
+    -- around him. No heading maths: the game does the turning, so it cannot end up inverted.
+    SetBlockingOfNonTemporaryEvents(entity, true)
+    TaskTurnPedToFaceEntity(entity, PlayerPedId(), -1)
+end
+
+local function PlayTalkingFace(entity)
+    if not DoesEntityExist(entity) then return end
+    RequestAnimDict("mp_facial")
+    local waited = 0
+    while not HasAnimDictLoaded("mp_facial") and waited < 1000 do
+        Wait(10)
+        waited = waited + 10
+    end
+    if HasAnimDictLoaded("mp_facial") and DoesEntityExist(entity) then
+        TaskPlayAnim(entity, "mp_facial", "mic_chatter", 3.0, -3.0, -1, 49, 0, false, false, false)
+    end
+end
+
+-- Every ped model ships a voice with short lines; these are the ones that read right
+-- with each gesture. Played with the gesture so the mouth matches the hands.
+local GESTURE_SOUNDS = {
+    shrug     = 'GENERIC_WHATEVER',
+    nod       = 'GENERIC_YES',
+    no        = 'GENERIC_NO',
+    point     = 'CHAT_STATE',
+    wave_off  = 'GENERIC_WHATEVER',
+    easy      = 'CHAT_RESP',
+    you       = 'PROVOKE_GENERIC',
+    hello     = 'GENERIC_HI',
+    damn      = 'GENERIC_CURSE_MED',
+    come_here = 'GENERIC_HI',
+    laugh     = 'CHAT_RESP',           -- no universal laugh line in the game voices; the closest cheerful one
+    shocked   = 'GENERIC_SHOCKED_MED',
+    grunt     = 'GENERIC_INSULT_MED',
+}
+
+local function PlayNPCSound(entity, gesture)
+    local speech = gesture and GESTURE_SOUNDS[gesture]
+    if not speech or not entity or not DoesEntityExist(entity) then return end
+    PlayPedAmbientSpeechNative(entity, speech, 'SPEECH_PARAMS_FORCE_NORMAL')
+end
+
+local function PlayNPCGesture(entity, gesture)
+    if not gesture or not entity or not DoesEntityExist(entity) then return end
+    PlayNPCSound(entity, gesture)
+    local clip = GESTURE_CLIPS[gesture]
+    if not clip then return end
+    local dict = IsPedMale(entity) and 'gestures@m@standing@casual' or 'gestures@f@standing@casual'
+    CreateThread(function()
+        RequestAnimDict(dict)
+        local waited = 0
+        while not HasAnimDictLoaded(dict) and waited < 1000 do
+            Wait(10)
+            waited = waited + 10
+        end
+        if not HasAnimDictLoaded(dict) or not DoesEntityExist(entity) then return end
+        -- The talking face sits in the secondary slot too, so drop it, play the gesture
+        -- (upper body, keeps the feet planted), then bring the face back.
+        ClearPedSecondaryTask(entity)
+        Wait(50)
+        TaskPlayAnim(entity, dict, clip, 4.0, -4.0, 2200, 48, 0, false, false, false)
+        Wait(2300)
+        if DoesEntityExist(entity) and activeConversation then
+            PlayTalkingFace(entity)
+        end
+        RemoveAnimDict(dict)
+    end)
+end
+
+-- Called by the hail point when a player walks past an NPC with a `hail` block.
+-- Turns to the player, gives the come-here wave and voice line, and a quiet nudge on screen.
+local lastHail = {}
+function HailPlayer(npcId)
+    local npcInfo = spawnedNPCs[npcId]
+    if not npcInfo or not npcInfo.entity or not DoesEntityExist(npcInfo.entity) then return end
+    if activeConversation or npcInfo.inConversation or conversationCooldown then return end
+    local hail = npcInfo.data.hail or {}
+    local now = GetGameTimer()
+    if lastHail[npcId] and now - lastHail[npcId] < (hail.cooldownSec or 180) * 1000 then return end
+    if math.random(100) > (hail.chance or 40) then
+        lastHail[npcId] = now - ((hail.cooldownSec or 180) * 1000) + 30000 -- try again in 30 s
+        return
+    end
+    lastHail[npcId] = now
+    TaskTurnPedToFaceEntity(npcInfo.entity, PlayerPedId(), 2500)
+    PlayNPCGesture(npcInfo.entity, 'come_here')
+    exports['ox_lib']:notify({
+        title = npcInfo.data.name,
+        description = hail.line or 'waves you over',
+        type = 'inform',
+        duration = 3500,
+    })
+end
+
+RegisterNetEvent('ai-npcs:client:receiveMessage', function(message, npcId, isNetworked, gesture)
     if not activeConversation or activeConversation.npcId ~= npcId then return end
+
+    local convoNpc = spawnedNPCs[npcId]
+    if convoNpc and convoNpc.entity and DoesEntityExist(convoNpc.entity) then
+        PlayNPCGesture(convoNpc.entity, gesture)
+    end
 
     SendNUIMessage({
         action = "receiveMessage",
         message = message,
-        npcName = activeConversation.npc.name
+        npcName = activeConversation.npc.name,
+        gesture = gesture
     })
 
     -- Show subtitle if enabled

@@ -20,6 +20,7 @@ client_scripts {
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
     'server/config_secrets.lua',  -- Server-only API keys (not sent to clients)
+    'data/places.lua',            -- DPS 2026-09-27: real places a local NPC knows
     'server/main.lua',
     'server/ai_handler.lua',
     -- v2.5 Systems

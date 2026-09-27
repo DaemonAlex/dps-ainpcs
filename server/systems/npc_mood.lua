@@ -249,7 +249,7 @@ function BuildMoodContext(npcId, npcData)
     local mood = GetNPCMood(npcId, npcData)
 
     local context = "\n=== YOUR CURRENT MOOD ===\n"
-    context = context .. string.format("You are feeling %s (mood score: %d)\n", mood.mood:upper(), mood.score)
+    context = context .. string.format("Right now you are feeling %s.\n", tostring(mood.mood):upper()) -- DPS 2026-09-27: was %d on a float score (crashed every talk), and the score is not something a person says
 
     -- Explain mood factors
     if mood.factors.weather and mood.factors.weather ~= 0 then

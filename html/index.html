@@ -3,32 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI NPC Conversation</title>
+    <title>DelPerroSands Talk</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="conversation-container" class="hidden">
-        <div class="conversation-header">
-            <h2 id="npc-name">NPC Name</h2>
-            <span id="npc-role" class="role-badge">Role</span>
-            <button id="close-btn" class="close-button">&times;</button>
+    <!-- DPS 2026-09-27: subtitle talk layer. No panel, no history box. -->
+    <div id="talk" class="hidden">
+        <div id="gesture" class="gesture hidden"></div>
+        <div id="choices" class="choices">
+            <button id="pay-btn" class="chip"><span class="k">$</span>Offer money</button>
+            <button id="leave-btn" class="chip"><span class="k">Esc</span>Walk away</button>
         </div>
-
-        <div id="conversation-messages" class="messages-container">
-            <!-- Messages will be added here dynamically -->
-        </div>
-
-        <div class="input-container">
-            <input type="text" id="message-input" placeholder="Type your message..." maxlength="200">
-            <button id="send-btn" class="send-button">Send</button>
-        </div>
-
-        <div class="conversation-footer">
-            <button id="payment-btn" class="payment-button">Offer Payment</button>
-            <button id="end-conversation-btn" class="end-button">End Conversation</button>
+        <div class="stack">
+            <div class="name"><span id="ring" class="ring"></span><span id="npc-name">NPC</span></div>
+            <div id="line" class="line"></div>
+            <div class="input">
+                <span class="k">Enter</span>
+                <input type="text" id="message-input" placeholder="Say something…" maxlength="200" autocomplete="off">
+                <span class="k dim">Esc walks away</span>
+            </div>
         </div>
     </div>
-
     <script src="script.js"></script>
 </body>
 </html>
