@@ -12,6 +12,7 @@ Places = {
     { name = "Pillbox hospital", kind = "big hospital, Ocean Medical", coords = vector3(307.16, -595.21, 43.28), area = "Los Santos", known = "everyone" },
     { name = "Mission Row police station", kind = "LSPD station", coords = vector3(428.23, -984.28, 30.71), area = "Los Santos", known = "everyone" },
     { name = "Bolingbroke Penitentiary", kind = "state prison", coords = vector3(1845.0, 2585.0, 45.7), area = "Grand Senora", known = "everyone" },
+    { name = "the Maze Bank branch inside the airport", kind = "bank", coords = vector3(-1079.88, -2792.12, 21.36), area = "Los Santos", known = "everyone" },
     { name = "the job centre by the Legion Square garage", kind = "place to get hired for regular work", coords = vector3(-268.95, -956.13, 31.22), area = "Los Santos", known = "everyone" },
 
     -- Los Santos
@@ -34,6 +35,8 @@ Places = {
     { name = "Wholesome Bakes", kind = "bakery", coords = vector3(1625.03, 3708.61, 34.55), area = "Sandy Shores" },
     { name = "Dream Cream", kind = "ice cream parlour", coords = vector3(1614.07, 3708.16, 34.59), area = "Sandy Shores" },
     { name = "InkInc", kind = "tattoo shop", coords = vector3(1598.5, 3710.54, 34.99), area = "Sandy Shores" },
+    { name = "Cuts & Shaves", kind = "barber", coords = vector3(1607.84, 3714.34, 34.62), area = "Sandy Shores" },
+    { name = "Ronnies Carwash", kind = "car wash", coords = vector3(1981.58, 3766.52, 32.26), area = "Sandy Shores" },
     { name = "the Boat House", kind = "boats, marina", coords = vector3(1532.67, 3784.5, 34.51), area = "Sandy Shores" },
     { name = "PostOp depot", kind = "parcel depot", coords = vector3(1716.22, 3759.15, 34.42), area = "Sandy Shores" },
     { name = "the Fire Museum", kind = "museum", coords = vector3(1707.77, 3784.75, 35.49), area = "Sandy Shores" },

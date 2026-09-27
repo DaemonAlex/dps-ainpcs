@@ -244,6 +244,9 @@ function CreateNPC(npcData)
         SetPedCanPlayAmbientAnims(npc, true)
     end
 
+    -- DPS 2026-09-27: pose for this spot (schedule slot `scenario` or npcData.scenario)
+    ApplyNPCScenario(npc, npcData)
+
     -- Release model from memory (entity keeps its own reference)
     SetModelAsNoLongerNeeded(npcData.model)
 
@@ -379,6 +382,76 @@ function GetNPCCurrentLocation(npcData)
     end
 
     return npcData.homeLocation
+end
+
+-- DPS 2026-09-27: ambient scenario for the NPC's current spot. A schedule slot may carry
+-- `scenario = "WORLD_HUMAN_..."`; otherwise npcData.scenario; otherwise none (idle).
+function GetNPCCurrentScenario(npcData)
+    if npcData.movement and npcData.movement.pattern == "schedule" then
+        local currentHour = GetClockHours()
+        for _, locData in ipairs(npcData.movement.locations) do
+            local startHour, endHour = locData.time[1], locData.time[2]
+            local inRange
+            if startHour < endHour then
+                inRange = currentHour >= startHour and currentHour < endHour
+            else
+                inRange = currentHour >= startHour or currentHour < endHour
+            end
+            if inRange then return locData.scenario or npcData.scenario end
+        end
+    end
+    return npcData.scenario
+end
+
+function ApplyNPCScenario(entity, npcData)
+    if not entity or not DoesEntityExist(entity) then return end
+    local scenario = GetNPCCurrentScenario(npcData)
+    if not scenario then return end
+    if IsPedUsingScenario(entity, scenario) then return end
+    TaskStartScenarioInPlace(entity, scenario, 0, true)
+end
+
+-- Short stroll away from a schedule spot and back. Slot may set `wander = <metres>` (default 7).
+function StrollAroundSpot(npcInfo, spot, currentTime)
+    if npcInfo.isMoving or npcInfo.inConversation then return end
+    local sinceLast = currentTime - (npcInfo.lastMoveTime or 0)
+    if sinceLast < (npcInfo.nextStrollIn or math.random(60000, 150000)) then return end
+    npcInfo.nextStrollIn = math.random(60000, 150000)
+
+    local entity = npcInfo.entity
+    local radius = (spot.wander or 7.0) + 0.0
+    local angle = math.random() * 2 * math.pi
+    local d = 3.0 + math.random() * (radius - 3.0)
+    local tx, ty = spot.x + math.cos(angle) * d, spot.y + math.sin(angle) * d
+    local found, gz = GetGroundZFor_3dCoord(tx, ty, spot.z + 5.0, false)
+    if not found then gz = spot.z end
+
+    npcInfo.isMoving = true
+    ClearPedTasks(entity)
+    TaskGoToCoordAnyMeans(entity, tx, ty, gz, 1.0, 0, false, 786603, 0.0)
+
+    CreateThread(function()
+        local started = GetGameTimer()
+        while npcInfo.isMoving and DoesEntityExist(entity) and GetGameTimer() - started < 25000 do
+            Wait(500)
+            if #(GetEntityCoords(entity) - vector3(tx, ty, gz)) < 1.5 then break end
+        end
+        if not DoesEntityExist(entity) or npcInfo.inConversation then npcInfo.isMoving = false return end
+        Wait(math.random(15000, 35000)) -- stand there a while
+        if not DoesEntityExist(entity) or npcInfo.inConversation then npcInfo.isMoving = false return end
+        TaskGoToCoordAnyMeans(entity, spot.x, spot.y, spot.z, 1.0, 0, false, 786603, 0.0)
+        started = GetGameTimer()
+        while DoesEntityExist(entity) and GetGameTimer() - started < 25000 do
+            Wait(500)
+            if #(GetEntityCoords(entity) - vector3(spot.x, spot.y, spot.z)) < 1.5 then break end
+        end
+        npcInfo.isMoving = false
+        npcInfo.lastMoveTime = GetGameTimer()
+        if DoesEntityExist(entity) and not npcInfo.inConversation then
+            SetEntityHeading(entity, spot.w or GetEntityHeading(entity))
+            ApplyNPCScenario(entity, npcInfo.data)
+        end
+    end)
 end
 
 function ScheduleNPCSpawn(npcData)
@@ -594,7 +667,12 @@ function HandleScheduleMovement(npcId, npcInfo, currentTime)
     local currentCoords = GetEntityCoords(entity)
     local dist = #(currentCoords - vector3(targetLocation.x, targetLocation.y, targetLocation.z))
 
-    if dist < 5.0 then return end
+    if dist < 5.0 then
+        -- DPS 2026-09-27: at the spot. Every so often take a short stroll nearby, stand a while,
+        -- walk back and pick the pose up again, so schedule NPCs do not stand on one tile.
+        StrollAroundSpot(npcInfo, targetLocation, currentTime)
+        return
+    end
     if npcInfo.isMoving then return end
 
     -- Teleport if too far (different zone), otherwise walk
@@ -606,6 +684,7 @@ function HandleScheduleMovement(npcId, npcInfo, currentTime)
 
         SetEntityCoords(entity, targetLocation.x, targetLocation.y, teleZ)
         SetEntityHeading(entity, targetLocation.w)
+        ApplyNPCScenario(entity, npcData)
         npcInfo.lastMoveTime = GetGameTimer()
 
         -- Update blip if exists
@@ -630,6 +709,7 @@ function HandleScheduleMovement(npcId, npcInfo, currentTime)
                     npcInfo.isMoving = false
                     npcInfo.lastMoveTime = GetGameTimer()
                     SetEntityHeading(entity, targetLocation.w)
+        ApplyNPCScenario(entity, npcData)
                 end
             end
         end)
@@ -742,9 +822,15 @@ function EndConversation(reason)
     -- Restore NPC to normal state
     local npcInfo = spawnedNPCs[activeConversation.npcId]
     if npcInfo and DoesEntityExist(npcInfo.entity) then
-        -- Clear animation
+        -- Clear animation, then go back to the spot's pose
         ClearPedTasks(npcInfo.entity)
         npcInfo.inConversation = false
+        local ent, data = npcInfo.entity, npcInfo.data
+        SetTimeout(600, function()
+            if DoesEntityExist(ent) and not npcInfo.inConversation then
+                ApplyNPCScenario(ent, data)
+            end
+        end)
 
         -- Unfreeze if NPC has movement pattern
         if npcInfo.data.movement and npcInfo.data.movement.pattern ~= "stationary" then
