@@ -312,6 +312,13 @@ local function crowdTooClose(key, x, y)
     return false
 end
 
+local function crowdKeptOut(crowd, x, y)
+    for _, k in ipairs(crowd.keepOut or {}) do
+        if #(vector2(x, y) - vector2(k.pos.x, k.pos.y)) < (k.radius or 2.0) then return true end
+    end
+    return false
+end
+
 function CrowdSpawnPoint(npcData)
     local crowd = Config.Crowds and Config.Crowds[npcData.crowd.key]
     if not crowd then return nil end
@@ -324,7 +331,7 @@ function CrowdSpawnPoint(npcData)
         for _ = 1, 8 do
             local x = cc.x + (math.random() - 0.5) * 6.0
             local y = cc.y + (math.random() - 0.5) * 6.0
-            if not crowdTooClose(npcData.crowd.key, x, y) and crowdFloorClear(center, x, y, cc.z) then
+            if not crowdKeptOut(crowd, x, y) and not crowdTooClose(npcData.crowd.key, x, y) and crowdFloorClear(center, x, y, cc.z) then
                 return vector4(x, y, cc.z, math.random(0, 359) + 0.0), true
             end
         end
@@ -334,7 +341,7 @@ function CrowdSpawnPoint(npcData)
         local dist = 1.5 + math.random() * (crowd.radius - 1.5)
         local x = center.x + math.cos(angle) * dist
         local y = center.y + math.sin(angle) * dist
-        if not crowdTooClose(npcData.crowd.key, x, y) and crowdFloorClear(center, x, y, center.z) then
+        if not crowdKeptOut(crowd, x, y) and not crowdTooClose(npcData.crowd.key, x, y) and crowdFloorClear(center, x, y, center.z) then
             local heading = math.deg(math.atan(center.y - y, center.x - x)) - 90.0 + (math.random() - 0.5) * 60.0
             return vector4(x, y, center.z, heading), false
         end

@@ -17,6 +17,9 @@ Config.Crowds = {
         center = vector4(1986.38, 3051.36, 47.22, 203.2),  -- Damon /spot yj-center 2026-09-27 (#178)
         counter = vector3(1986.38, 3051.36, 47.22),        -- sitters spawn around here and warp onto the nearest stool
         radius = 9.0,
+        -- DPS 2026-09-27 Damon: "stop a_f_m_salton_01 from spawning there in the 1983.45 3049.82 47.21" — that is
+        -- the bartender's side of the counter. No regular spawns within this radius of these points.
+        keepOut = { { pos = vector3(1983.45, 3049.82, 47.21), radius = 3.0 } },
         hours = nil,                -- DPS 2026-09-27 Damon: no clock gating, the whole pool shows all day
         dayCount = 99,              -- (set hours = {18, 4} and dayCount = 2 to thin the bar by day again)
         rumors = {
