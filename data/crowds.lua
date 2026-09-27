@@ -14,9 +14,9 @@ Config = Config or {}
 Config.Crowds = {
     yellowjack = {
         label = "the Yellow Jack Inn",
-        center = vector4(1986.38, 3051.36, 47.22, 203.2),  -- Damon /spot yj-center 2026-09-27 (#178)
-        counter = vector3(1986.38, 3051.36, 47.22),        -- sitters spawn around here and warp onto the nearest stool
-        radius = 9.0,
+        center = vector4(1998.04, 3054.68, 47.06, 203.2),  -- DPS 2026-09-27 Damon: "spawn them in the lot not on the roof" (/spot yj-lot #179)
+        counter = nil,                                     -- no counter outside: sitters take a bench if one is near, else they stand
+        radius = 12.0,
         -- DPS 2026-09-27 Damon: "stop a_f_m_salton_01 from spawning there in the 1983.45 3049.82 47.21" — that is
         -- the bartender's side of the counter. No regular spawns within this radius of these points.
         keepOut = { { pos = vector3(1983.45, 3049.82, 47.21), radius = 3.0 } },
