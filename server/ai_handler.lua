@@ -760,6 +760,16 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
     end
 
     -- ===========================================
+    -- MOLD ENGINE: FACTS (only the tiers this character has unlocked)
+    -- ===========================================
+    if BuildFactsContext then
+        local factsContext = BuildFactsContext(npc, conversation.trustLevel)
+        if factsContext ~= "" then
+            prompt = prompt .. factsContext .. "\n"
+        end
+    end
+
+    -- ===========================================
     -- V2.5: NPC MOOD CONTEXT
     -- ===========================================
     local moodContext, moodEffects = "", nil
@@ -787,6 +797,42 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
         local rumorContext = exports['dps-ainpcs']:BuildRumorContext(npc.id, citizenid, npc)
         if rumorContext and rumorContext ~= "" then
             prompt = prompt .. rumorContext .. "\n"
+        end
+    end
+
+    -- ===========================================
+    -- MOLD ENGINE: MEMORY (what this NPC remembers about this character)
+    -- ===========================================
+    if citizenid and BuildMemoryContext then
+        local ok, memoryContext = pcall(BuildMemoryContext, npc.id, citizenid)
+        if ok and memoryContext and memoryContext ~= "" then
+            prompt = prompt .. memoryContext .. "\n"
+        elseif not ok then
+            print(("[AI NPCs] memory block failed: %s"):format(tostring(memoryContext)))
+        end
+    end
+
+    -- ===========================================
+    -- MOLD ENGINE: CITY LEDGER (records this NPC heard about, as hearsay)
+    -- ===========================================
+    if BuildLedgerContext then
+        local ok, ledgerContext = pcall(BuildLedgerContext, npc)
+        if ok and ledgerContext and ledgerContext ~= "" then
+            prompt = prompt .. ledgerContext .. "\n"
+        elseif not ok then
+            print(("[AI NPCs] ledger block failed: %s"):format(tostring(ledgerContext)))
+        end
+    end
+
+    -- ===========================================
+    -- MOLD ENGINE: LADDER (where this character stands with this face)
+    -- ===========================================
+    if citizenid and BuildLadderContext then
+        local ok, ladderContext = pcall(BuildLadderContext, npc, citizenid)
+        if ok and ladderContext and ladderContext ~= "" then
+            prompt = prompt .. ladderContext .. "\n"
+        elseif not ok then
+            print(("[AI NPCs] ladder block failed: %s"):format(tostring(ladderContext)))
         end
     end
 
@@ -1440,3 +1486,75 @@ CreateThread(function()
         print(("^2[AI NPCs]^7 Global Token Budget: %d tokens/minute"):format(GLOBAL_TOKEN_BUDGET.maxTokensPerMinute))
     end
 end)
+
+-----------------------------------------------------------
+-- MOLD ENGINE: one-shot model request + talk summary memory
+-----------------------------------------------------------
+
+-- Ask the configured provider for a short text. onDone(text) or onDone(nil) on any failure.
+-- Same request shapes as GenerateAIResponseInternal (anthropic / ollama native / openai-compatible).
+function RequestModelText(systemPrompt, messages, maxTokens, onDone)
+    local provider = Config.AI.provider or "openai"
+    local requestData, headers, apiUrl
+    if provider == "anthropic" then
+        requestData = { model = Config.AI.model, messages = messages, max_tokens = maxTokens, temperature = 0.3, system = systemPrompt }
+        headers = { ["Content-Type"] = "application/json", ["x-api-key"] = Config.AI.apiKey, ["anthropic-version"] = "2023-06-01" }
+        apiUrl = Config.AI.apiUrl
+    elseif provider == "ollama" and Config.AI.ollamaNativeApi ~= false then
+        local msgs = { { role = "system", content = systemPrompt } }
+        for _, m in ipairs(messages) do msgs[#msgs + 1] = m end
+        requestData = { model = Config.AI.model, messages = msgs, stream = false, options = { temperature = 0.3, num_predict = maxTokens } }
+        headers = { ["Content-Type"] = "application/json" }
+        apiUrl = (Config.AI.apiUrl or "http://127.0.0.1:11434") .. "/api/chat"
+    else
+        local msgs = { { role = "system", content = systemPrompt } }
+        for _, m in ipairs(messages) do msgs[#msgs + 1] = m end
+        requestData = { model = Config.AI.model, messages = msgs, max_tokens = maxTokens, temperature = 0.3 }
+        headers = { ["Content-Type"] = "application/json" }
+        if Config.AI.apiKey and Config.AI.apiKey ~= "" and Config.AI.apiKey ~= "not-needed" then
+            headers["Authorization"] = "Bearer " .. Config.AI.apiKey
+        end
+        if provider == "ollama" then
+            apiUrl = (Config.AI.apiUrl or "http://127.0.0.1:11434") .. "/v1/chat/completions"
+        else
+            apiUrl = Config.AI.apiUrl
+        end
+    end
+    if not apiUrl then return onDone(nil) end
+    PerformHttpRequest(apiUrl, function(statusCode, response)
+        if statusCode ~= 200 or not response then return onDone(nil) end
+        local ok, data = pcall(json.decode, response)
+        if not ok or type(data) ~= "table" then return onDone(nil) end
+        local text
+        if data.content and data.content[1] then text = data.content[1].text
+        elseif data.message then text = data.message.content
+        elseif data.choices and data.choices[1] and data.choices[1].message then text = data.choices[1].message.content end
+        onDone(text)
+    end, "POST", json.encode(requestData), headers)
+end
+
+-- After a talk: ask the model what the NPC would remember, store one line (importance 5, expires).
+function SummarizeConversation(conversation)
+    local cfg = Config.Memory
+    if not cfg or not cfg.talkSummary then return end
+    if not conversation or (conversation.messageCount or 0) < (cfg.minMessages or 3) then return end
+    if not conversation.conversationHistory or #conversation.conversationHistory == 0 then return end
+    local npc = conversation.npc
+    local identifier, npcId = conversation.identifier, conversation.npcId
+    if not npc or not identifier or not npcId then return end
+    local sys = ("You are %s. In one sentence under 25 words, in the third person, write what you would remember about this person after the talk below. No quotes, no lists, no names of places you did not say."):format(npc.name)
+    local ok, err = pcall(RequestModelText, sys, conversation.conversationHistory, cfg.summaryMaxTokens or 60, function(text)
+        if type(text) ~= "string" then return end
+        text = text:gsub("^%s+", ""):gsub("%s+$", "")
+        text = text:gsub("\n.*", "")
+        if #text < 8 then return end
+        if #text > 160 then text = text:sub(1, 157) .. "..." end
+        AddNPCMemory(identifier, npcId, 'neutral', text, 5, cfg.summaryExpiresDays or 30)
+        if Config.Debug and Config.Debug.enabled then
+            print(("[AI NPCs] memory for %s about %s: %s"):format(npc.name, identifier, text))
+        end
+    end)
+    if not ok and Config.Debug and Config.Debug.enabled then
+        print(("[AI NPCs] summary call failed: %s"):format(tostring(err)))
+    end
+end

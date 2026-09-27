@@ -84,6 +84,22 @@ Config.Trust = {
 }
 
 -----------------------------------------------------------
+-- Mold engine (2026-09-27): memory and city ledger
+-----------------------------------------------------------
+Config.Memory = {
+    maxLines = 5,            -- memories read into the prompt
+    talkSummary = true,      -- one extra model call after a talk writes a one-line memory
+    minMessages = 3,         -- talks shorter than this are not remembered
+    summaryMaxTokens = 60,
+    summaryExpiresDays = 30,
+}
+
+Config.Ledger = {
+    maxLines = 6,            -- lines of "what you heard lately"
+    hours = 48,              -- how far back the dispatch feed reaches
+}
+
+-----------------------------------------------------------
 -- Intel/Clue System
 -----------------------------------------------------------
 Config.Intel = {
@@ -220,6 +236,23 @@ Config.NPCs = {
         role = "street_informant",
         voice = Config.Voices.male_street,
         trustCategory = "criminal", -- Trust tracked separately per category
+        facts = { -- mold engine: only the tiers this character has unlocked reach the model
+            rumors = {
+                "People who want work drink at the Yellow Jack after dark.",
+                "Sandy is quiet until midnight. Then it isn't.",
+            },
+            basic = {
+                "You run errands for a man who cooks. You never say his name to strangers.",
+                "The bus stop by the market is where you take messages in the daytime.",
+            },
+            detailed = {
+                "Walter drinks alone at the Dusty Boot on Fridays. He only talks to people you sent.",
+                "There is a dead drop behind the Ammunation strip. You leave a burner there for people you trust.",
+            },
+            secret = {
+                "The lab is a trailer past the water tower. You have never said this out loud and you will not unless they have cooked.",
+            },
+        },
 
         personality = {
             type = "Street Informant",
@@ -1647,6 +1680,21 @@ Keep responses salesy but helpful. Under 90 words.]]
         role = "pilot_info",
         voice = Config.Voices.male_calm,
         trustCategory = "legitimate",
+        facts = { -- mold engine: only the tiers this character has unlocked reach the model
+            rumors = {
+                "The airline flies out of here. Student pilots start at the small fields up north: Paleto, Grapeseed, Cayo.",
+                "Anyone who wants to fly for a living signs up at the desk and starts as a student.",
+            },
+            basic = {
+                "Ranks run from Student to Fleet Captain. You move up by flying clean hours, not by talking.",
+            },
+            detailed = {
+                "The Sandy Shores and Grapeseed strips do not get the scrutiny LSIA gets. You do not work there.",
+            },
+            secret = {
+                "McKenzie Field and the old Grapeseed strip are where charters go that do not file plans. You never say who flies them.",
+            },
+        },
 
         personality = {
             type = "Commercial Pilot",

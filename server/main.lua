@@ -410,6 +410,14 @@ function CreateReferral(identifier, fromNpcId, toNpcId, referralType)
         VALUES (?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE referral_type = ?, created_at = CURRENT_TIMESTAMP
     ]], {identifier, fromNpcId, toNpcId, referralType or 'standard', referralType or 'standard'})
+
+    -- Mold engine: both faces remember the introduction.
+    if RememberEngine then
+        local toNpc = GetNPCById(toNpcId)
+        local fromNpc = GetNPCById(fromNpcId)
+        RememberEngine(identifier, fromNpcId, ("You sent them to %s."):format(toNpc and toNpc.name or toNpcId), 'neutral')
+        RememberEngine(identifier, toNpcId, ("%s sent them to you."):format(fromNpc and fromNpc.name or fromNpcId), 'neutral')
+    end
 end
 
 -- Check if player has a referral to an NPC
@@ -863,6 +871,7 @@ RegisterNetEvent('ai-npcs:server:sendMessage', function(message, paymentOffer)
     if conversation.messageCount > Config.Interaction.maxConversationLength then
         local endMsg = "I've said enough. Come back another time..."
         TriggerClientEvent('ai-npcs:client:endConversation', src, endMsg)
+        if SummarizeConversation then SummarizeConversation(conversation) end
         UnlockNPC(conversation.npcId, src)
         activeConversations[src] = nil
         return
@@ -891,6 +900,9 @@ RegisterNetEvent('ai-npcs:server:endConversation', function()
 
         -- Flush trust updates immediately for this player
         FlushTrustForPlayer(conversation.identifier)
+
+        -- Mold engine: what the NPC will remember about this talk (one model call, async)
+        if SummarizeConversation then SummarizeConversation(conversation) end
 
         -- Unlock the NPC so others can talk
         UnlockNPC(conversation.npcId, src)

@@ -22,6 +22,9 @@ server_scripts {
     'server/config_secrets.lua',  -- Server-only API keys (not sent to clients)
     'data/places.lua',            -- DPS 2026-09-27: real places a local NPC knows
     'server/main.lua',
+    'server/systems/memory.lua',  -- mold engine: what the NPC remembers about a character
+    'server/systems/ledger.lua',  -- mold engine: what the NPC heard lately (city records as hearsay)
+    'server/systems/facts.lua',   -- mold engine: written facts per trust tier
     'server/ai_handler.lua',
     -- v2.5 Systems
     'server/systems/rumor_mill.lua',
@@ -33,7 +36,10 @@ server_scripts {
     'server/systems/interrogation.lua',
     'server/systems/discord_logs.lua',
     -- v2.6 quest engine (must load after main.lua + faction_trust for its globals/exports)
-    'server/systems/quest_engine.lua'
+    'server/systems/quest_engine.lua',
+    -- mold engine: ladders (data first, then the engine; needs quest_engine + main.lua globals)
+    'data/ladders.lua',
+    'server/systems/ladders.lua'
 }
 
 ui_page 'html/index.html'
