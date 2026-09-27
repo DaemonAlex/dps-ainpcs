@@ -33,6 +33,8 @@ Config.Crowds = {
 }
 
 -- sit = true means try a stool or chair first, else a standing pose.
+-- spot = vector4 pins a regular to one hand-set place (Damon 2026-09-27: "they are on the roof and sitting on top
+-- of stuff, let me hand set location"); without it the client picks a random floor spot around the counter.
 CrowdPersonas = {
     yellowjack = {
         { key = "earl",    name = "Earl",        model = "a_m_m_hillbilly_02", sit = true,  trait = "Retired oil-field hand, drinks slow, talks slower. Calls everyone 'chief'.", onMind = "Your truck failed inspection again and you blame the mechanic.", samples = { "Chief, if it ain't broke, you ain't looked hard enough.", "Sit down or don't, you're making the beer nervous." } },
@@ -72,7 +74,7 @@ function ExpandCrowds()
                     homeLocation = crowd.center,
                     movement = { pattern = "crowd", radius = crowd.radius },
                     schedule = schedule,
-                    crowd = { key = key, slot = i, sit = p.sit == true },
+                    crowd = { key = key, slot = i, sit = p.sit == true, spot = p.spot },
                     role = "crowd",
                     trustCategory = "social",
                     voice = Config.Voices and Config.Voices.male_street or nil,

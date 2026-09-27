@@ -325,6 +325,11 @@ function CrowdSpawnPoint(npcData)
     local c = crowd.center
     local center = vector3(c.x, c.y, c.z)
     local wantSit = npcData.crowd.sit
+    -- Hand-set spot wins over everything (data/crowds.lua persona.spot)
+    if npcData.crowd.spot then
+        local s = npcData.crowd.spot
+        return vector4(s.x, s.y, s.z, s.w or 0.0), wantSit
+    end
     -- Sitters spawn near the counter and warp into the nearest seat scenario (stool, chair).
     if wantSit and crowd.counter then
         local cc = crowd.counter

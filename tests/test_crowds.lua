@@ -37,3 +37,9 @@ for _, npc in ipairs(Config.NPCs) do if npc.id == "crowd_testbar_a" then a = npc
 eq("day slot no schedule", a.schedule, nil)
 check("night slot gated", b.schedule ~= nil and b.schedule[1].time[1] == 18 and b.schedule[2].active == false)
 Config.Crowds.testbar = nil; CrowdPersonas.testbar = nil
+-- hand-set spot is carried into the NPC entry
+CrowdPersonas.testbar = { { key = "p", name = "P", model = "m", samples = {}, spot = vector4(1, 2, 3, 90.0) } }
+Config.Crowds.testbar = { label = "Test Bar", center = vector4(0, 0, 0, 0), radius = 5, rumors = {} }
+eq("expand pinned", ExpandCrowds(), 1)
+for _, npc in ipairs(Config.NPCs) do if npc.id == "crowd_testbar_p" then eq("pinned spot x", npc.crowd.spot.x, 1); eq("pinned heading", npc.crowd.spot.w, 90.0) end end
+Config.Crowds.testbar = nil; CrowdPersonas.testbar = nil
