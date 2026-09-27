@@ -22,5 +22,18 @@ end
 local first = Config.NPCs[2]
 eq("day regular has no schedule", first.schedule, nil)
 local last = Config.NPCs[#Config.NPCs]
-check("night regular has schedule", last.schedule ~= nil and last.schedule[1].active == true and last.schedule[2].active == false)
-eq("night hours", last.schedule[1].time[1], 18)
+if Config.Crowds.yellowjack.hours then
+    check("night regular has schedule", last.schedule ~= nil and last.schedule[1].active == true and last.schedule[2].active == false)
+    eq("night hours", last.schedule[1].time[1], Config.Crowds.yellowjack.hours[1])
+else
+    eq("no gating: last regular has no schedule", last.schedule, nil)
+end
+-- gating logic itself, on a throwaway crowd
+Config.Crowds.testbar = { label = "Test Bar", center = vector4(0, 0, 0, 0), radius = 5, hours = { 18, 4 }, dayCount = 1, rumors = {} }
+CrowdPersonas.testbar = { { key = "a", name = "A", model = "m", samples = {} }, { key = "b", name = "B", model = "m", samples = {} } }
+eq("expand test bar", ExpandCrowds(), 2)
+local a, b
+for _, npc in ipairs(Config.NPCs) do if npc.id == "crowd_testbar_a" then a = npc end if npc.id == "crowd_testbar_b" then b = npc end end
+eq("day slot no schedule", a.schedule, nil)
+check("night slot gated", b.schedule ~= nil and b.schedule[1].time[1] == 18 and b.schedule[2].active == false)
+Config.Crowds.testbar = nil; CrowdPersonas.testbar = nil
