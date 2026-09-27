@@ -65,4 +65,20 @@ Places = {
     { name = "Roxwood police", kind = "RPD station", coords = vector3(-464.0, 7087.8, 20.0), area = "Roxwood" },
     { name = "Roxwood hospital", kind = "hospital", coords = vector3(-511.2, 7385.5, 12.0), area = "Roxwood" },
     { name = "Roxwood fire station", kind = "fire station", coords = vector3(-438.3, 7085.5, 21.0), area = "Roxwood" },
+
+    -- everyday basics (real-people pass 2026-09-27): the places anyone gets asked about
+    { name = "Los Santos Customs in Burton", kind = "mechanic, LS Customs", coords = vector3(-339.49, -136.72, 39.01), area = "Los Santos", known = "everyone" },
+    { name = "Larrys Garage", kind = "mechanic and garage", coords = vector3(-541.18, 6909.37, 24.30), area = "Roxwood" },
+    { name = "Premium Deluxe Motorsport", kind = "car dealership", coords = vector3(-45.19, -1097.33, 26.42), area = "Los Santos", known = "everyone" },
+    { name = "Benefactor of Marina Beach", kind = "car dealership", coords = vector3(-360.67, 7416.19, 6.41), area = "Roxwood" },
+    { name = "city hall on Carcer Way", kind = "city hall, licences and paperwork", coords = vector3(-544.48, -204.27, 38.22), area = "Los Santos", known = "everyone" },
+    { name = "Ponsonbys on Portola Drive", kind = "clothing store, pricey", coords = vector3(-709.20, -152.30, 37.42), area = "Los Santos" },
+    { name = "the Marina Beach clothing store", kind = "clothing store", coords = vector3(-340.35, 7214.49, 6.80), area = "Roxwood" },
+    { name = "Roxwood Medical", kind = "hospital", coords = vector3(-532.26, 7380.05, 12.84), area = "Roxwood" },
+    { name = "Pine Small Bank", kind = "bank", coords = vector3(-474.15, 7443.83, 8.31), area = "Roxwood" },
+    { name = "Pine Big Bank in Juniper", kind = "bank", coords = vector3(-2830.95, 6222.55, 9.77), area = "Roxwood" },
+    { name = "Marina police department", kind = "RPD station", coords = vector3(-465.69, 7085.47, 22.38), area = "Roxwood" },
+    { name = "Red Rocket Taxis", kind = "taxi rank, hires drivers", coords = vector3(-524.68, 7648.58, 6.87), area = "Roxwood" },
+    { name = "Punk Noodles", kind = "restaurant", coords = vector3(-625.24, 6921.13, 24.32), area = "Roxwood" },
+    { name = "Pool Party Bar", kind = "bar", coords = vector3(-687.43, 6990.95, 37.78), area = "Roxwood" },
 }

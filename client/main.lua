@@ -211,6 +211,15 @@ function CreateNPC(npcData)
         return
     end
 
+    -- Crowd members take a random spot around their bar instead of the shared centre.
+    local crowdSit = false
+    if npcData.crowd then
+        local pt, sit = CrowdSpawnPoint(npcData)
+        if not pt then return end
+        spawnCoords = pt
+        crowdSit = sit
+    end
+
     local npc = CreatePed(4, npcData.model, spawnCoords.x, spawnCoords.y, spawnCoords.z, spawnCoords.w, false, true)
 
     -- Verify NPC was created successfully
@@ -235,8 +244,12 @@ function CreateNPC(npcData)
     SetPedConfigFlag(npc, 281, true) -- No writhe
 
     -- Movement configuration based on pattern
-    if npcData.movement and npcData.movement.pattern ~= "stationary" then
+    if npcData.movement and npcData.movement.pattern ~= "stationary" and npcData.movement.pattern ~= "crowd" then
         FreezeEntityPosition(npc, false)
+        SetPedCanPlayAmbientAnims(npc, true)
+        SetPedKeepTask(npc, true)
+    elseif npcData.movement and npcData.movement.pattern == "crowd" then
+        FreezeEntityPosition(npc, false) -- scenario warps need a free ped; the pose holds them
         SetPedCanPlayAmbientAnims(npc, true)
         SetPedKeepTask(npc, true)
     else
@@ -245,7 +258,11 @@ function CreateNPC(npcData)
     end
 
     -- DPS 2026-09-27: pose for this spot (schedule slot `scenario` or npcData.scenario)
-    ApplyNPCScenario(npc, npcData)
+    if npcData.crowd then
+        CrowdPose(npc, npcData, spawnCoords, crowdSit)
+    else
+        ApplyNPCScenario(npc, npcData)
+    end
 
     -- Release model from memory (entity keeps its own reference)
     SetModelAsNoLongerNeeded(npcData.model)
@@ -270,6 +287,74 @@ function CreateNPC(npcData)
     print(("[AI NPCs] Spawned NPC: %s at %.1f, %.1f, %.1f"):format(
         npcData.name, spawnCoords.x, spawnCoords.y, spawnCoords.z
     ))
+end
+
+-----------------------------------------------------------
+-- CROWDS (real-people pass 2026-09-27): random spots around a bar, sitters on the real
+-- stools and chairs (nearest scenario point), standers at clear floor spots with a pose.
+-----------------------------------------------------------
+local CROWD_STAND_SCENARIOS = { "WORLD_HUMAN_DRINKING", "WORLD_HUMAN_HANG_OUT_STREET", "WORLD_HUMAN_LEANING", "WORLD_HUMAN_STAND_MOBILE", "WORLD_HUMAN_STAND_IMPATIENT", "WORLD_HUMAN_DRINKING" }
+
+local function crowdFloorClear(center, x, y, z)
+    -- A wall between the centre and the spot means the spot is in another room or outside.
+    local ray = StartShapeTestRay(center.x, center.y, center.z + 0.6, x, y, z + 0.6, 1 + 16, 0, 7)
+    local _, hit = GetShapeTestResult(ray)
+    return hit == 0
+end
+
+local function crowdTooClose(key, x, y)
+    for id, info in pairs(spawnedNPCs) do
+        if info.data.crowd and info.data.crowd.key == key and DoesEntityExist(info.entity) then
+            local p = GetEntityCoords(info.entity)
+            if #(vector3(p.x, p.y, 0) - vector3(x, y, 0)) < 1.4 then return true end
+        end
+    end
+    return false
+end
+
+function CrowdSpawnPoint(npcData)
+    local crowd = Config.Crowds and Config.Crowds[npcData.crowd.key]
+    if not crowd then return nil end
+    local c = crowd.center
+    local center = vector3(c.x, c.y, c.z)
+    local wantSit = npcData.crowd.sit
+    -- Sitters spawn near the counter and warp into the nearest seat scenario (stool, chair).
+    if wantSit and crowd.counter then
+        local cc = crowd.counter
+        for _ = 1, 8 do
+            local x = cc.x + (math.random() - 0.5) * 6.0
+            local y = cc.y + (math.random() - 0.5) * 6.0
+            if not crowdTooClose(npcData.crowd.key, x, y) and crowdFloorClear(center, x, y, cc.z) then
+                return vector4(x, y, cc.z, math.random(0, 359) + 0.0), true
+            end
+        end
+    end
+    for _ = 1, 14 do
+        local angle = math.random() * 2 * math.pi
+        local dist = 1.5 + math.random() * (crowd.radius - 1.5)
+        local x = center.x + math.cos(angle) * dist
+        local y = center.y + math.sin(angle) * dist
+        if not crowdTooClose(npcData.crowd.key, x, y) and crowdFloorClear(center, x, y, center.z) then
+            local heading = math.deg(math.atan(center.y - y, center.x - x)) - 90.0 + (math.random() - 0.5) * 60.0
+            return vector4(x, y, center.z, heading), false
+        end
+    end
+    return vector4(center.x, center.y, center.z, c.w or 0.0), false
+end
+
+function CrowdPose(entity, npcData, spot, trySit)
+    if trySit then
+        -- Nearest seat scenario within 3 m (vanilla bars have them on every stool); warp in.
+        TaskUseNearestScenarioToCoordWarp(entity, spot.x, spot.y, spot.z, 3.0, -1)
+        CreateThread(function()
+            Wait(1500)
+            if DoesEntityExist(entity) and not IsPedUsingAnyScenario(entity) then
+                TaskStartScenarioInPlace(entity, CROWD_STAND_SCENARIOS[math.random(#CROWD_STAND_SCENARIOS)], 0, true)
+            end
+        end)
+        return
+    end
+    TaskStartScenarioInPlace(entity, CROWD_STAND_SCENARIOS[math.random(#CROWD_STAND_SCENARIOS)], 0, true)
 end
 
 function AddNPCTarget(npc, npcData)
@@ -420,6 +505,7 @@ function StrollAroundSpot(npcInfo, spot, currentTime)
 
     local entity = npcInfo.entity
     local radius = (spot.wander or 7.0) + 0.0
+    if radius < 3.5 then return end -- posted indoors (wander = 0): never stroll through counters and walls
     local angle = math.random() * 2 * math.pi
     local d = 3.0 + math.random() * (radius - 3.0)
     local tx, ty = spot.x + math.cos(angle) * d, spot.y + math.sin(angle) * d
@@ -744,6 +830,70 @@ end
 -----------------------------------------------------------
 -- CONVERSATION SYSTEM
 -----------------------------------------------------------
+-- DPS 2026-09-27 real-people pass: the model may end a line with [walk]. Only NPCs with a
+-- quiet spot (schedule slot `quiet = vector4` or npcData.quietSpot) are offered the tag; the
+-- ped then paths there properly and the talk stays open while the player follows.
+function NPCQuietSpot(npcInfo)
+    local data = npcInfo.data
+    if data.movement and data.movement.locations then
+        local hour = GetClockHours()
+        for _, slot in ipairs(data.movement.locations) do
+            local t = slot.time
+            if t and slot.coords and slot.quiet then
+                local from, to = t[1], t[2]
+                local inSlot = (from <= to) and (hour >= from and hour < to) or (from > to and (hour >= from or hour < to))
+                if inSlot then return slot.quiet end
+            end
+        end
+    end
+    return data.quietSpot
+end
+
+function WalkNPCToQuiet(npcInfo)
+    if not npcInfo or npcInfo.walking then return end
+    local quiet = NPCQuietSpot(npcInfo)
+    local entity = npcInfo.entity
+    if not quiet or not DoesEntityExist(entity) then return end
+    npcInfo.walking = true
+    CreateThread(function()
+        ClearPedTasks(entity)
+        Wait(100)
+        TaskFollowNavMeshToCoord(entity, quiet.x, quiet.y, quiet.z, 1.0, -1, 0.4, false, quiet.w or 0.0)
+        local started = GetGameTimer()
+        while DoesEntityExist(entity) and activeConversation and activeConversation.npcId == npcInfo.data.id do
+            Wait(250)
+            local pos = GetEntityCoords(entity)
+            if #(pos - vector3(quiet.x, quiet.y, quiet.z)) < 1.3 or GetGameTimer() - started > 30000 then break end
+        end
+        npcInfo.walking = false
+        if DoesEntityExist(entity) and activeConversation and activeConversation.npcId == npcInfo.data.id then
+            ClearPedTasks(entity)
+            FaceThePlayer(entity)
+            PlayTalkingFace(entity)
+        end
+    end)
+end
+
+-- Ends the talk when the player actually leaves, the way a person would notice: more than
+-- 7 m away for three seconds (15 m while the NPC is walking them somewhere).
+function StartConversationWatch(npcId)
+    CreateThread(function()
+        local away = 0
+        while activeConversation and activeConversation.npcId == npcId do
+            Wait(1000)
+            local npcInfo = spawnedNPCs[npcId]
+            if not npcInfo or not DoesEntityExist(npcInfo.entity) then break end
+            local limit = npcInfo.walking and 15.0 or 7.0
+            local dist = #(GetEntityCoords(PlayerPedId()) - GetEntityCoords(npcInfo.entity))
+            if dist > limit then away = away + 1 else away = 0 end
+            if away >= 3 then
+                EndConversation()
+                break
+            end
+        end
+    end)
+end
+
 function StartConversation(npcId)
     if activeConversation then
         exports['ox_lib']:notify({
@@ -797,6 +947,7 @@ function StartConversation(npcId)
         npc = npcInfo.data,
         paymentMade = 0
     }
+    StartConversationWatch(npcId)
 
     -- Start conversation on server
     TriggerServerEvent('ai-npcs:server:startConversation', npcId)
@@ -1046,7 +1197,7 @@ function FaceThePlayer(entity)
     TaskTurnPedToFaceEntity(entity, PlayerPedId(), -1)
 end
 
-local function PlayTalkingFace(entity)
+function PlayTalkingFace(entity)
     if not DoesEntityExist(entity) then return end
     RequestAnimDict("mp_facial")
     local waited = 0
@@ -1083,10 +1234,11 @@ local function PlayNPCSound(entity, gesture)
     PlayPedAmbientSpeechNative(entity, speech, 'SPEECH_PARAMS_FORCE_NORMAL')
 end
 
-local function PlayNPCGesture(entity, gesture)
+function PlayNPCGesture(entity, gesture)
     if not gesture or not entity or not DoesEntityExist(entity) then return end
     PlayNPCSound(entity, gesture)
     local clip = GESTURE_CLIPS[gesture]
+    print(("[AI NPCs] gesture %s -> %s on %s"):format(tostring(gesture), tostring(clip), tostring(entity)))
     if not clip then return end
     local dict = IsPedMale(entity) and 'gestures@m@standing@casual' or 'gestures@f@standing@casual'
     CreateThread(function()
@@ -1140,7 +1292,12 @@ RegisterNetEvent('ai-npcs:client:receiveMessage', function(message, npcId, isNet
 
     local convoNpc = spawnedNPCs[npcId]
     if convoNpc and convoNpc.entity and DoesEntityExist(convoNpc.entity) then
-        PlayNPCGesture(convoNpc.entity, gesture)
+        if gesture == 'walk' then
+            PlayNPCGesture(convoNpc.entity, 'come_here')
+            WalkNPCToQuiet(convoNpc)
+        else
+            PlayNPCGesture(convoNpc.entity, gesture)
+        end
     end
 
     SendNUIMessage({
@@ -1364,6 +1521,22 @@ RegisterNetEvent('ai-npcs:client:questCompleted', function(data)
 end)
 
 -- Convenience command to review/report active jobs from anywhere
+-- DPS 2026-09-27 debug: /npcgesture shrug  plays a gesture on the nearest AI NPC so the clips can be checked by eye.
+RegisterCommand('npcgesture', function(_, args)
+    local tag = args[1] or 'shrug'
+    local me = GetEntityCoords(PlayerPedId())
+    local best, bestD = nil, 12.0
+    for _, info in pairs(spawnedNPCs) do
+        if DoesEntityExist(info.entity) then
+            local d = #(GetEntityCoords(info.entity) - me)
+            if d < bestD then best, bestD = info, d end
+        end
+    end
+    if not best then print('[AI NPCs] no AI NPC within 12 m') return end
+    print(("[AI NPCs] test gesture %s on %s"):format(tag, best.data.name))
+    PlayNPCGesture(best.entity, tag)
+end, false)
+
 RegisterCommand('myjobs', function()
     TriggerServerEvent('ai-npcs:server:getMyQuests')
 end, false)

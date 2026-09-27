@@ -17,8 +17,10 @@ Config.AI = {
     apiUrl = "http://127.0.0.1:11434",  -- Ollama default endpoint (no /api/chat needed)
     apiKey = "not-needed",               -- Ollama doesn't require API key locally
     model = "dolphin-llama3:8b",         -- Uncensored model that fits in 8GB VRAM
-    maxTokens = 200,                     -- Keep low for faster responses
-    temperature = 0.85,                  -- Higher = more creative
+    maxTokens = 320,                     -- Our own model, no cap on our side
+    temperature = 0.9,                   -- Higher = more creative
+    contextLength = 8192,                -- Ollama num_ctx; the prompt carries memory, ledger, facts, situation
+    repeatPenalty = 1.15,                -- Ollama repeat_penalty; small models loop without it
     ollamaNativeApi = true,              -- Use native Ollama API (faster) vs OpenAI-compat
 
     -- OPTION 2: OpenAI
@@ -84,6 +86,22 @@ Config.Trust = {
 }
 
 -----------------------------------------------------------
+-- Mold engine (2026-09-27): memory and city ledger
+-----------------------------------------------------------
+Config.Memory = {
+    maxLines = 5,            -- memories read into the prompt
+    talkSummary = true,      -- one extra model call after a talk writes a one-line memory
+    minMessages = 2,         -- talks shorter than this are not remembered
+    summaryMaxTokens = 60,
+    summaryExpiresDays = 30,
+}
+
+Config.Ledger = {
+    maxLines = 6,            -- lines of "what you heard lately"
+    hours = 48,              -- how far back the dispatch feed reaches
+}
+
+-----------------------------------------------------------
 -- Intel/Clue System
 -----------------------------------------------------------
 Config.Intel = {
@@ -146,7 +164,8 @@ Config.Interaction = {
     cooldown = 3000,              -- Cooldown between messages (ms)
     maxConversationLength = 15,   -- Max exchanges per conversation
     showSubtitles = true,
-    idleTimeout = 120000,         -- End conversation after 2 min idle
+    idleTimeout = 900000,         -- Safety only (15 min). Talks end when the player walks off, not on a timer (client watch).
+    modelGreeting = true,         -- The opening line comes from the model with memory in front of it
     -- Payment integration
     paymentMethods = {
         cash = true,
@@ -220,6 +239,32 @@ Config.NPCs = {
         role = "street_informant",
         voice = Config.Voices.male_street,
         trustCategory = "criminal", -- Trust tracked separately per category
+        facts = { -- mold engine: only the tiers this character has unlocked reach the model
+            rumors = {
+                "People who want work drink at the Yellow Jack after dark.",
+                "Sandy is quiet until midnight. Then it isn't.",
+            },
+            basic = {
+                "You run errands for a man who cooks. You never say his name to strangers.",
+                "The bus stop by the market is where you take messages in the daytime.",
+            },
+            detailed = {
+                "Walter drinks alone at the Dusty Boot on Fridays. He only talks to people you sent.",
+                "There is a dead drop behind the Ammunation strip. You leave a burner there for people you trust.",
+            },
+            secret = {
+                "The lab is a trailer past the water tower. You have never said this out loud and you will not unless they have cooked.",
+            },
+        },
+        voiceSamples = { -- how Mike actually sounds; examples beat adjectives (calm lines first; jumpy, not hysterical)
+            "Yeah, yeah, I'm Mike. Sit down, you're making the place look busy.",
+            "You want work? Everybody wants work. What I want is somebody who shows up.",
+            "Heh. You're alright. Dumb, but alright.",
+            "Friday. After dark. Don't be early, early looks like cops.",
+            "*glances at the door, then back* Go on. I'm listening.",
+        },
+        calibration = "A greeting, your name, small talk: normal, relaxed, maybe a dig. You only get jumpy about things that are actually dangerous: cops mentioned by name, product named out loud, a stranger pushing for the cook. With someone you have met before you are easier still. Never call somebody loud or tell them to keep it down unless they actually said something dangerous.",
+        -- quietSpot = vector4(x, y, z, heading), -- where he walks you when he ends a line with [walk]; mark it in game first
 
         personality = {
             type = "Street Informant",
@@ -1647,6 +1692,28 @@ Keep responses salesy but helpful. Under 90 words.]]
         role = "pilot_info",
         voice = Config.Voices.male_calm,
         trustCategory = "legitimate",
+        facts = { -- mold engine: only the tiers this character has unlocked reach the model
+            rumors = {
+                "The airline flies out of here. Student pilots start at the small fields up north: Paleto, Grapeseed, Cayo.",
+                "Anyone who wants to fly for a living signs up at the desk and starts as a student.",
+            },
+            basic = {
+                "Ranks run from Student to Fleet Captain. You move up by flying clean hours, not by talking.",
+            },
+            detailed = {
+                "The Sandy Shores and Grapeseed strips do not get the scrutiny LSIA gets. You do not work there.",
+            },
+            secret = {
+                "McKenzie Field and the old Grapeseed strip are where charters go that do not file plans. You never say who flies them.",
+            },
+        },
+        voiceSamples = { -- how Marcus actually sounds
+            "Two hundred hours before I let anyone near a jet. That's not a rule, that's physics.",
+            "You've got the look. Half the people who walk up to that desk have the look. Come back Monday and we'll see if you've got the hands.",
+            "Weather's turning. If you're flying north tonight, don't.",
+            "*taps the clipboard* Paleto first. Small strip, honest wind, cheap mistakes.",
+            "I like you. Doesn't change the answer.",
+        },
 
         personality = {
             type = "Commercial Pilot",
