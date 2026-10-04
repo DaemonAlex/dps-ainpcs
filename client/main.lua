@@ -1300,6 +1300,22 @@ function PlayNPCGesture(entity, gesture)
     end)
 end
 
+-- NPC lines float over the NPC's head in the DPS bubble look (dps-chat's shared bubble maker).
+-- Falls back to the old corner notification when dps-chat is not running.
+-- Long replies are cut for the bubble; the talk panel still shows the whole line.
+local function npcBubble(entityOrCoords, name, text, fallbackTitle, fallbackMs)
+    if type(text) ~= 'string' or text == '' then return end
+    if GetResourceState('dps-chat') == 'started' then
+        local short = #text > 118 and (text:sub(1, 115) .. '...') or text
+        local ms = math.min(12000, 4000 + #short * 50)   -- longer lines stay up longer
+        local ok, id = pcall(function()
+            return exports['dps-chat']:ShowBubble(entityOrCoords, short, { tag = name, kind = 'npc', duration = ms })
+        end)
+        if ok and id then return end
+    end
+    exports['ox_lib']:notify({ title = fallbackTitle or name, description = text:sub(1, 100) .. (#text > 100 and '...' or ''), type = 'inform', duration = fallbackMs or 4000 })
+end
+
 -- Called by the hail point when a player walks past an NPC with a `hail` block.
 -- Turns to the player, gives the come-here wave and voice line, and a quiet nudge on screen.
 local lastHail = {}
@@ -1317,12 +1333,7 @@ function HailPlayer(npcId)
     lastHail[npcId] = now
     TaskTurnPedToFaceEntity(npcInfo.entity, PlayerPedId(), 2500)
     PlayNPCGesture(npcInfo.entity, 'come_here')
-    exports['ox_lib']:notify({
-        title = npcInfo.data.name,
-        description = hail.line or 'waves you over',
-        type = 'inform',
-        duration = 3500,
-    })
+    npcBubble(npcInfo.entity, npcInfo.data.name, hail.line or 'waves you over', npcInfo.data.name, 3500)
 end
 
 RegisterNetEvent('ai-npcs:client:receiveMessage', function(message, npcId, isNetworked, gesture)
@@ -1345,14 +1356,11 @@ RegisterNetEvent('ai-npcs:client:receiveMessage', function(message, npcId, isNet
         gesture = gesture
     })
 
-    -- Show subtitle if enabled
+    -- Show the line over the NPC's head if subtitles are on
     if Config.Interaction.showSubtitles then
-        exports['ox_lib']:notify({
-            title = activeConversation.npc.name,
-            description = message:sub(1, 100) .. (message:len() > 100 and "..." or ""),
-            type = 'info',
-            duration = 5000
-        })
+        local target = (convoNpc and convoNpc.entity and DoesEntityExist(convoNpc.entity)) and convoNpc.entity or nil
+        if target then npcBubble(target, activeConversation.npc.name, message, activeConversation.npc.name, 5000)
+        else exports['ox_lib']:notify({ title = activeConversation.npc.name, description = message:sub(1, 100) .. (message:len() > 100 and '...' or ''), type = 'info', duration = 5000 }) end
     end
 
     -- Trigger networked speech broadcast if enabled
@@ -1390,12 +1398,9 @@ RegisterNetEvent('ai-npcs:client:hearNearbySpeech', function(sourcePlayer, npcId
         -- Volume falls off with distance
         local volume = 1.0 - (distance / maxDistance)
         if volume > 0.3 then  -- Only show if reasonably close
-            exports['ox_lib']:notify({
-                title = npcName .. ' (nearby)',
-                description = message:sub(1, 80) .. (message:len() > 80 and "..." or ""),
-                type = 'info',
-                duration = 3000
-            })
+            local npcInfo = spawnedNPCs[npcId]
+            local target = (npcInfo and npcInfo.entity and DoesEntityExist(npcInfo.entity)) and npcInfo.entity or npcCoords
+            npcBubble(target, npcName, message, npcName .. ' (nearby)', 3000)
         end
     end
 end)
