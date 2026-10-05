@@ -225,6 +225,11 @@ RegisterNetEvent('ai-npcs:server:acceptQuest', function(npcId, questId)
             completed_at = NULL, offered_at = CURRENT_TIMESTAMP
     ]], {citizenid, npcId, questId, dbQuestType(quest.type), json.encode(questData)})
 
+    -- Mold engine: the NPC remembers handing out the job.
+    if RememberEngine then
+        RememberEngine(citizenid, npcId, ("They took the job you called '%s'."):format(quest.title), 'neutral')
+    end
+
     TriggerClientEvent('ox_lib:notify', src, {
         title = 'Job Accepted',
         description = quest.title,
@@ -421,6 +426,11 @@ end)
 function GrantQuestReward(src, citizenid, Player, npc, npcId, quest)
     local reward = quest.reward or {}
 
+    -- Mold engine: the NPC remembers the finished job.
+    if RememberEngine and npc then
+        RememberEngine(citizenid, npcId, ("They finished '%s' for you."):format(quest.title), 'positive')
+    end
+
     -- Money
     if reward.money and reward.money > 0 and Player then
         Player.Functions.AddMoney('cash', reward.money, 'ai-npc-quest:' .. tostring(quest.id))
@@ -449,6 +459,16 @@ function GrantQuestReward(src, citizenid, Player, npc, npcId, quest)
             pcall(function()
                 exports['dps-ainpcs']:AddFactionTrust(citizenid, faction, delta, 'quest:' .. tostring(quest.id))
             end)
+        end
+    end
+
+    -- Mold engine: a finished quest may complete a ladder rung (referral + breadcrumb + payoff).
+    if AdvanceLadder then
+        local ok, res = pcall(AdvanceLadder, src, citizenid, npcId, quest.id)
+        if not ok then
+            print(("[AI NPCs] AdvanceLadder failed: %s"):format(tostring(res)))
+        elseif res and Config.Debug and Config.Debug.enabled then
+            print(("[AI NPCs] ladder %s for %s via %s"):format(res, citizenid, quest.id))
         end
     end
 end

@@ -275,6 +275,11 @@ function PurchaseIntel(playerId, intelId)
         VALUES (?, ?, ?)
     ]], {intelId, citizenid, intel.value})
 
+    -- Mold engine: the NPC remembers being paid for what they knew.
+    if RememberEngine then
+        RememberEngine(citizenid, intel.npc_id, ("They paid you $%d for what you knew about %s."):format(intel.value or 0, tostring(intel.title)), 'positive')
+    end
+
     -- Parse intel details
     local details = json.decode(intel.details or "{}")
 

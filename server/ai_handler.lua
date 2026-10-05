@@ -366,6 +366,21 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
     -- Build the enhanced system prompt with context
     local systemPrompt = BuildContextualSystemPrompt(npc, playerContext, conversation)
 
+    -- Real-people pass: the model sees what it already said this talk and is told not to reuse it.
+    do
+        local said = {}
+        for i = #conversation.conversationHistory, 1, -1 do
+            local m = conversation.conversationHistory[i]
+            if m.role == "assistant" and type(m.content) == "string" then
+                said[#said + 1] = '"' .. m.content:sub(1, 120):gsub("\n", " ") .. '"'
+                if #said >= 4 then break end
+            end
+        end
+        if #said > 0 then
+            systemPrompt = systemPrompt .. "=== LINES YOU ALREADY SAID THIS TALK (do not reuse their words, openers or shape) ===\n" .. table.concat(said, "\n") .. "\n\n"
+        end
+    end
+
     -- Build conversation history for API
     local messages = {}
 
@@ -409,6 +424,10 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
                 options = {
                     temperature = Config.AI.temperature or 0.85,
                     num_predict = Config.AI.maxTokens or 200,
+                    -- Real-people pass: the prompt carries memory, ledger, facts and situation now;
+                    -- the default 4096 context would silently drop the front of it.
+                    num_ctx = Config.AI.contextLength or 8192,
+                    repeat_penalty = Config.AI.repeatPenalty or 1.15,
                 }
             }
 
@@ -552,6 +571,11 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
                     tag = tag:lower()
                     for _, g in ipairs(GESTURE_TAGS) do
                         if g == tag then gesture = g break end
+                    end
+                    -- Real-people pass: [walk] is honoured once per talk, only for faces with a quiet spot
+                    if tag == "walk" and not conversation.walked and NPCHasQuietSpot and NPCHasQuietSpot(npc) then
+                        gesture = "walk"
+                        conversation.walked = true
                     end
                     aiResponse = aiResponse:gsub("%s*%[[%a_]+%]%s*$", "")
                 end
@@ -700,16 +724,26 @@ local function BuildLocalKnowledge(npc)
     if not Places or #Places == 0 then return "" end
     local here = npcStandsAt(npc)
     local rows = {}
+    local atPlace, atDist = nil, 45.0 -- DPS 2026-09-27: the place the NPC stands in is "here", never a destination
     for _, p in ipairs(Places) do
         local d = here and #(vector3(p.coords.x, p.coords.y, here.z) - here) or nil
-        local include = p.known == "everyone" or (d and d <= LOCAL_RADIUS)
+        if d and d < atDist then
+            atPlace, atDist = p, d
+        end
+    end
+    for _, p in ipairs(Places) do
+        local d = here and #(vector3(p.coords.x, p.coords.y, here.z) - here) or nil
+        local include = p ~= atPlace and (p.known == "everyone" or (d and d <= LOCAL_RADIUS))
         if include then
             rows[#rows + 1] = { p = p, d = d or 999999 }
         end
     end
-    if #rows == 0 then return "" end
+    if #rows == 0 and not atPlace then return "" end
     table.sort(rows, function(a, b) return a.d < b.d end)
     local lines = {}
+    if atPlace then
+        lines[#lines + 1] = ("You are at %s (%s) right now, and so is the person you are talking to. This is where the talk happens; never send them here or tell them to find it."):format(atPlace.name, atPlace.kind)
+    end
     for i = 1, math.min(#rows, MAX_LOCAL_PLACES) do
         local r = rows[i]
         local where
@@ -729,7 +763,8 @@ local function BuildLocalKnowledge(npc)
     end
     return "=== WHAT A LOCAL LIKE YOU KNOWS (real places; these are the only places you may name) ===\n"
         .. table.concat(lines, "\n")
-        .. "\nIf someone asks where something is, answer the way your character would: point, whisper, make them ask twice, or refuse. You may skip places that are not your kind of thing. Never name a place that is not on this list; if it is not here, you don't know it.\n"
+        .. "\nIf someone asks where something is, answer the way your character would: point, whisper, make them ask twice, or refuse. You may skip places that are not your kind of thing. Never name a place that is not on this list or in the everyday-questions block; if it is not there, you don't know it.\n"
+        .. "Do not steer them anywhere on your own. You are having a conversation where you both stand; only give directions when they ask for them or when your own business genuinely needs them to move.\n"
 end
 
 -- The gesture tags the model may end a line with. Client maps them to clips.
@@ -743,7 +778,22 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
     prompt = prompt .. "You are a real person on a street in San Andreas, not an assistant. Talk the way people actually talk: short, one to three sentences, contractions, slang that fits you, half-finished thoughts, a joke or a dig when it suits you. This is an adults-only place: swearing, crude jokes and a foul mood are all fine when they fit who you are.\n"
     prompt = prompt .. "Never make lists, never use headings or bullet points, never say 'certainly', 'I understand', 'as an AI' or 'let me know'. Never summarize what was said. Never narrate rules about trust or payment; just act on them the way a person would.\n"
     prompt = prompt .. "You only know what this prompt says you know. If asked about anything else, you shrug it off, change the subject, or lie the way this character would lie. You never invent a place, a name, a price, a time or a plan that is not written here.\n"
-    prompt = prompt .. "Small stage directions in *asterisks* are fine, one at most, kept short.\n\n"
+    prompt = prompt .. "Small stage directions in *asterisks* are fine, one at most, kept short.\n"
+    -- Real-people pass: reactions sized to what was actually said. "Hello" is not a threat.
+    prompt = prompt .. "Match the size of your reaction to what was actually said. A greeting, your own name, small talk: answer like a person having a normal day. Save the alarm, the whispering and the 'keep it down' for things that are genuinely risky in this world.\n"
+    if npc.calibration then
+        prompt = prompt .. tostring(npc.calibration) .. "\n"
+    end
+    prompt = prompt .. "\n"
+
+    -- Real-people pass: the NPC's own voice, as examples, not adjectives.
+    if type(npc.voiceSamples) == "table" and #npc.voiceSamples > 0 then
+        prompt = prompt .. "=== HOW YOU SOUND (lines you have said before; match the voice, never repeat them) ===\n"
+        for i = 1, math.min(#npc.voiceSamples, 6) do
+            prompt = prompt .. '"' .. tostring(npc.voiceSamples[i]) .. '"\n'
+        end
+        prompt = prompt .. "\n"
+    end
 
     local citizenid = playerContext.citizenid
 
@@ -753,10 +803,40 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
         prompt = prompt .. worldContext .. "\n"
     end
 
+    -- Real-people pass: where you are, what you are doing, what is on your mind today
+    if BuildSituationContext then
+        local ok, situation = pcall(BuildSituationContext, npc)
+        if ok and situation and situation ~= "" then
+            prompt = prompt .. situation .. "\n"
+        elseif not ok then
+            print(("[AI NPCs] situation block failed: %s"):format(tostring(situation)))
+        end
+    end
+
+    -- Real-people pass: everyday questions anyone in the city can answer
+    if BuildBasicsContext then
+        local ok, basics = pcall(BuildBasicsContext, npc)
+        if ok and basics and basics ~= "" then
+            prompt = prompt .. basics .. "\n"
+        elseif not ok then
+            print(("[AI NPCs] basics block failed: %s"):format(tostring(basics)))
+        end
+    end
+
     -- Places a local like this NPC knows (data/places.lua)
     local localKnowledge = BuildLocalKnowledge(npc)
     if localKnowledge ~= "" then
         prompt = prompt .. localKnowledge .. "\n"
+    end
+
+    -- ===========================================
+    -- MOLD ENGINE: FACTS (only the tiers this character has unlocked)
+    -- ===========================================
+    if BuildFactsContext then
+        local factsContext = BuildFactsContext(npc, conversation.trustLevel)
+        if factsContext ~= "" then
+            prompt = prompt .. factsContext .. "\n"
+        end
     end
 
     -- ===========================================
@@ -787,6 +867,52 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
         local rumorContext = exports['dps-ainpcs']:BuildRumorContext(npc.id, citizenid, npc)
         if rumorContext and rumorContext ~= "" then
             prompt = prompt .. rumorContext .. "\n"
+        end
+    end
+
+    -- ===========================================
+    -- MOLD ENGINE: MEMORY (what this NPC remembers about this character)
+    -- ===========================================
+    if citizenid and BuildMemoryContext then
+        local ok, memoryContext = pcall(BuildMemoryContext, npc.id, citizenid)
+        if ok and memoryContext and memoryContext ~= "" then
+            prompt = prompt .. memoryContext .. "\n"
+        elseif not ok then
+            print(("[AI NPCs] memory block failed: %s"):format(tostring(memoryContext)))
+        end
+    end
+
+    -- Real-people pass: the tail of the last talk, so this one starts where that one ended
+    if citizenid and BuildRecapContext then
+        local ok, recap = pcall(BuildRecapContext, npc.id, citizenid)
+        if ok and recap and recap ~= "" then
+            prompt = prompt .. recap .. "\n"
+        elseif not ok then
+            print(("[AI NPCs] recap block failed: %s"):format(tostring(recap)))
+        end
+    end
+
+    -- ===========================================
+    -- MOLD ENGINE: CITY LEDGER (records this NPC heard about, as hearsay)
+    -- ===========================================
+    if BuildLedgerContext then
+        local ok, ledgerContext = pcall(BuildLedgerContext, npc)
+        if ok and ledgerContext and ledgerContext ~= "" then
+            prompt = prompt .. ledgerContext .. "\n"
+        elseif not ok then
+            print(("[AI NPCs] ledger block failed: %s"):format(tostring(ledgerContext)))
+        end
+    end
+
+    -- ===========================================
+    -- MOLD ENGINE: LADDER (where this character stands with this face)
+    -- ===========================================
+    if citizenid and BuildLadderContext then
+        local ok, ladderContext = pcall(BuildLadderContext, npc, citizenid)
+        if ok and ladderContext and ladderContext ~= "" then
+            prompt = prompt .. ladderContext .. "\n"
+        elseif not ok then
+            print(("[AI NPCs] ladder block failed: %s"):format(tostring(ladderContext)))
         end
     end
 
@@ -883,6 +1009,13 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
     prompt = prompt .. "- If they have not earned or paid for something, do not hand it over; make them work for it the way this character would.\n"
     prompt = prompt .. "- End your reply with exactly one gesture tag from this list, on its own at the very end: [" .. table.concat(GESTURE_TAGS, "] [") .. "]\n"
     prompt = prompt .. "- React like a person: a joke gets [laugh], something off-colour or shocking gets [shocked] or [grunt], a brush-off gets [wave_off].\n"
+    -- Real-people pass: the walk tag only exists for faces with a quiet spot, and only once per talk.
+    if NPCHasQuietSpot and NPCHasQuietSpot(npc) and not conversation.walked then
+        prompt = prompt .. "- If you want to take them somewhere quieter to talk, end that one line with [walk] instead of a gesture: you will actually walk them to your usual quiet spot a few steps away. Only once per talk, only when it fits (something private is about to be said), and never to anywhere else.\n"
+    else
+        prompt = prompt .. "- You stay where you are. Do not tell them to follow you or to go anywhere; you have nowhere to take them right now.\n"
+    end
+    prompt = prompt .. "- Never repeat a phrase or an opener you already used in this talk. If you notice you are about to, say something else.\n"
 
     return prompt
 end
@@ -1440,3 +1573,86 @@ CreateThread(function()
         print(("^2[AI NPCs]^7 Global Token Budget: %d tokens/minute"):format(GLOBAL_TOKEN_BUDGET.maxTokensPerMinute))
     end
 end)
+
+-----------------------------------------------------------
+-- MOLD ENGINE: one-shot model request + talk summary memory
+-----------------------------------------------------------
+
+-- Ask the configured provider for a short text. onDone(text) or onDone(nil) on any failure.
+-- Same request shapes as GenerateAIResponseInternal (anthropic / ollama native / openai-compatible).
+function RequestModelText(systemPrompt, messages, maxTokens, onDone)
+    local provider = Config.AI.provider or "openai"
+    local requestData, headers, apiUrl
+    if provider == "anthropic" then
+        requestData = { model = Config.AI.model, messages = messages, max_tokens = maxTokens, temperature = 0.3, system = systemPrompt }
+        headers = { ["Content-Type"] = "application/json", ["x-api-key"] = Config.AI.apiKey, ["anthropic-version"] = "2023-06-01" }
+        apiUrl = Config.AI.apiUrl
+    elseif provider == "ollama" and Config.AI.ollamaNativeApi ~= false then
+        local msgs = { { role = "system", content = systemPrompt } }
+        for _, m in ipairs(messages) do msgs[#msgs + 1] = m end
+        requestData = { model = Config.AI.model, messages = msgs, stream = false, options = { temperature = 0.3, num_predict = maxTokens } }
+        headers = { ["Content-Type"] = "application/json" }
+        apiUrl = (Config.AI.apiUrl or "http://127.0.0.1:11434") .. "/api/chat"
+    else
+        local msgs = { { role = "system", content = systemPrompt } }
+        for _, m in ipairs(messages) do msgs[#msgs + 1] = m end
+        requestData = { model = Config.AI.model, messages = msgs, max_tokens = maxTokens, temperature = 0.3 }
+        headers = { ["Content-Type"] = "application/json" }
+        if Config.AI.apiKey and Config.AI.apiKey ~= "" and Config.AI.apiKey ~= "not-needed" then
+            headers["Authorization"] = "Bearer " .. Config.AI.apiKey
+        end
+        if provider == "ollama" then
+            apiUrl = (Config.AI.apiUrl or "http://127.0.0.1:11434") .. "/v1/chat/completions"
+        else
+            apiUrl = Config.AI.apiUrl
+        end
+    end
+    if not apiUrl then return onDone(nil) end
+    PerformHttpRequest(apiUrl, function(statusCode, response)
+        if statusCode ~= 200 or not response then return onDone(nil) end
+        local ok, data = pcall(json.decode, response)
+        if not ok or type(data) ~= "table" then return onDone(nil) end
+        local text
+        if data.content and data.content[1] then text = data.content[1].text
+        elseif data.message then text = data.message.content
+        elseif data.choices and data.choices[1] and data.choices[1].message then text = data.choices[1].message.content end
+        onDone(text)
+    end, "POST", json.encode(requestData), headers)
+end
+
+-- After a talk: ask the model what the NPC would remember, store one line (importance 5, expires).
+function SummarizeConversation(conversation)
+    -- Real-people pass: every talk is archived in full first, whatever its length.
+    if ArchiveConversation then
+        local okA, errA = pcall(ArchiveConversation, conversation)
+        if not okA then print(("[AI NPCs] archive failed: %s"):format(tostring(errA))) end
+    end
+    local cfg = Config.Memory
+    if not cfg or not cfg.talkSummary then return end
+    if not conversation or (conversation.messageCount or 0) < (cfg.minMessages or 3) then return end
+    if not conversation.conversationHistory or #conversation.conversationHistory == 0 then return end
+    local npc = conversation.npc
+    local identifier, npcId = conversation.identifier, conversation.npcId
+    if not npc or not identifier or not npcId then return end
+    local sys = ("You are %s. You will be asked, out of character, what you would remember about the person you just talked to. Answer in one sentence under 25 words, third person, plain statement of fact. No quotes, no lists, no orders, no names of places you did not say."):format(npc.name)
+    -- Copy the history and end on a user turn that asks the question; a bare history just makes the model speak the NPC's next line.
+    local messages = {}
+    for _, m in ipairs(conversation.conversationHistory) do messages[#messages + 1] = m end
+    messages[#messages + 1] = { role = "user", content = "Out of character: in one sentence, what do you remember about this person after that talk?" }
+    local ok, err = pcall(RequestModelText, sys, messages, cfg.summaryMaxTokens or 60, function(text)
+        if type(text) ~= "string" then return end
+        text = text:gsub("^%s+", ""):gsub("%s+$", "")
+        text = text:gsub("\n.*", "")
+        if #text > 160 then text = text:sub(1, 157) .. "..." end
+        -- IsSafeMemoryText (memory.lua) drops anything shaped like an instruction a player could plant
+        if IsSafeMemoryText and not IsSafeMemoryText(text) then return end
+        if #text < 8 then return end
+        AddNPCMemory(identifier, npcId, 'neutral', text, 5, cfg.summaryExpiresDays or 30)
+        if Config.Debug and Config.Debug.enabled then
+            print(("[AI NPCs] memory for %s about %s: %s"):format(npc.name, identifier, text))
+        end
+    end)
+    if not ok and Config.Debug and Config.Debug.enabled then
+        print(("[AI NPCs] summary call failed: %s"):format(tostring(err)))
+    end
+end

@@ -1,15 +1,17 @@
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,400;0,700;1,700&display=swap');
 
-/* DelPerroSands in-game look: rounded, orange outline, see-through orange fill, cream text */
+/* DelPerroSands bubble look (same as dps-chat): see-through orange, thin white outline, Roboto text and badges (never Comic Sans). No blur filters (CEF paints them black). */
 :root {
   --sun: #ff7a45;
-  --fill: rgba(255, 122, 69, 0.22);
+  --fill: rgba(255, 122, 69, 0.8);
+  --line: #ffffff;
+  --dark: #14161f;
   --cream: #f4f1ea;
   --dim: #d9cfc0;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { width: 100%; height: 100%; background: transparent; overflow: hidden; font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif; }
+html, body { width: 100%; height: 100%; background: transparent; overflow: hidden; font-family: Roboto, Arial, sans-serif; }
 .hidden { display: none !important; }
 
 #talk { position: fixed; inset: 0; pointer-events: none; }
@@ -18,22 +20,22 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
 .stack { position: absolute; left: 0; right: 0; bottom: 7vh; display: grid; justify-items: center; gap: 10px; padding: 0 8vw; pointer-events: none; }
 .stack * { pointer-events: auto; }
 
-.name { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--sun); text-shadow: 0 1px 2px #000, 0 0 10px rgba(0,0,0,.6); }
+.name { display: flex; align-items: center; gap: 10px; font: 700 17px Roboto, Arial, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: var(--cream); text-shadow: 0 1px 2px #000, 0 0 10px rgba(0,0,0,.6); }
 .ring { width: 14px; height: 14px; border-radius: 50%; background: conic-gradient(var(--sun) 0 var(--trust, 0%), rgba(244,241,234,.28) var(--trust, 0%) 100%); box-shadow: 0 0 0 2px rgba(0,0,0,.55); }
 
-.line { max-width: 62ch; min-height: 1.4em; text-align: center; font-size: clamp(18px, 1.6vw, 26px); font-weight: 600; line-height: 1.35; color: var(--cream); text-shadow: 0 2px 4px #000, 0 0 18px rgba(0,0,0,.7); }
+.line { max-width: 62ch; min-height: 1.4em; text-align: center; font-size: clamp(17px, 1.5vw, 24px); font-weight: 700; line-height: 1.35; color: var(--cream); text-shadow: 0 2px 4px #000, 0 0 18px rgba(0,0,0,.7); }
 .line em { color: var(--dim); font-style: italic; font-weight: 400; }
 .line.thinking { color: var(--dim); letter-spacing: .3em; }
 
-.input { width: min(60ch, 86vw); display: flex; align-items: center; gap: 10px; padding: 9px 16px; background: var(--fill); backdrop-filter: blur(4px); border: 1.5px solid var(--sun); border-radius: 14px; color: var(--cream); font-size: 15px; }
-.input input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: var(--cream); font: 600 16px 'Archivo', sans-serif; }
+.input { width: min(60ch, 86vw); display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--fill); border: 1.5px solid var(--line); border-radius: 16px; color: var(--cream); font-size: 15px; }
+.input input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: #ffffff; font: 700 16px Roboto, Arial, sans-serif; text-shadow: 0 1px 2px rgba(0,0,0,.55); }
 .input input::placeholder { color: var(--dim); font-weight: 400; }
-.k { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--cream); border: 1px solid var(--sun); padding: 1px 7px; border-radius: 8px; white-space: nowrap; }
-.k.dim { color: var(--dim); border-color: rgba(255,122,69,.6); }
+.k { font: 700 13px Roboto, Arial, sans-serif; letter-spacing: .07em; line-height: 1; color: var(--dark); background: var(--cream); border: 1.5px solid var(--dark); padding: 2px 5px 1px; border-radius: 5px; white-space: nowrap; transform: rotate(-4deg); }
+.k.dim { opacity: .75; }
 
 .choices { position: absolute; right: 5vw; bottom: 22vh; display: grid; gap: 8px; }
-.chip { display: flex; align-items: center; gap: 10px; padding: 10px 16px; min-width: 190px; background: var(--fill); backdrop-filter: blur(4px); border: 1.5px solid var(--sun); border-radius: 14px; color: var(--cream); font: 600 14px 'Archivo', sans-serif; text-shadow: 0 1px 2px #000; cursor: pointer; text-align: left; }
-.chip:hover, .chip:focus-visible { background: rgba(255,122,69,.36); outline: 0; }
+.chip { display: flex; align-items: center; gap: 10px; padding: 10px 16px; min-width: 190px; background: var(--fill); border: 1.5px solid var(--line); border-radius: 16px; color: #ffffff; font: 700 14px Roboto, Arial, sans-serif; text-shadow: 0 1px 2px #000; cursor: pointer; text-align: left; }
+.chip:hover, .chip:focus-visible { background: rgba(255,140,95,.55); outline: 1.5px solid var(--line); outline-offset: 1px; }
 .chip:disabled { opacity: .5; cursor: default; }
 
-.gesture { position: absolute; left: 5vw; bottom: 22vh; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--cream); background: var(--fill); padding: 4px 10px; border: 1.5px solid var(--sun); border-radius: 10px; }
+.gesture { position: absolute; left: 5vw; bottom: 22vh; font: 700 12.5px Roboto, Arial, sans-serif; color: #ffffff; background: var(--fill); padding: 4px 10px; border: 1.5px solid var(--line); border-radius: 16px; text-shadow: 0 1px 2px rgba(0,0,0,.55); }

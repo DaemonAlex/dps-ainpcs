@@ -88,3 +88,24 @@ CREATE TABLE IF NOT EXISTS `ai_npc_memories` (
     INDEX `idx_citizenid_npc` (`citizenid`, `npc_id`),
     INDEX `idx_importance` (`importance`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `ai_npc_ladders` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `citizenid` VARCHAR(50) NOT NULL,
+    `ladder` VARCHAR(50) NOT NULL,
+    `region` VARCHAR(50) NOT NULL,
+    `rung` INT NOT NULL DEFAULT 1,
+    `status` ENUM('active','done','burned') DEFAULT 'active',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uq_char_ladder` (`citizenid`, `ladder`, `region`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS `ai_npc_conversations` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `citizenid` VARCHAR(50) NOT NULL,
+    `npc_id` VARCHAR(50) NOT NULL,
+    `message_count` INT NOT NULL DEFAULT 0,
+    `place` VARCHAR(120) NULL,
+    `transcript` LONGTEXT NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_char_npc` (`citizenid`, `npc_id`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
