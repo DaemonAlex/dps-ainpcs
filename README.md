@@ -104,7 +104,7 @@ Main file: `config.lua`. Jobs, items and gangs named in it must match your serve
 | Option | Default | Meaning |
 |---|---|---|
 | `provider` | `"ollama"` | `ollama`, `openai` or `anthropic` |
-| `apiUrl` | `http://100.127.29.87:11434` | Ollama: base URL. OpenAI-compatible: full chat-completions URL. Change this to your own server |
+| `apiUrl` | `http://127.0.0.1:11434` | Ollama: base URL. OpenAI-compatible: full chat-completions URL. Change this to your own server |
 | `apiKey` | `""` | Sent as a Bearer token (OpenAI-compatible) or `x-api-key` (Anthropic). Empty means no auth header |
 | `model` | `"granite4.1:8b"` | Model name |
 | `maxTokens` | `320` | Max reply length |
