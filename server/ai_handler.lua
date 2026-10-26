@@ -421,6 +421,7 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
                 model = Config.AI.model,
                 messages = {},
                 stream = false, -- FiveM can't handle streaming
+                keep_alive = -1, -- DPS 2026-10-19 (Damon): never unload; a cold load cost 9 of 11.6 s
                 options = {
                     temperature = Config.AI.temperature or 0.85,
                     num_predict = Config.AI.maxTokens or 200,
@@ -1590,7 +1591,7 @@ function RequestModelText(systemPrompt, messages, maxTokens, onDone)
     elseif provider == "ollama" and Config.AI.ollamaNativeApi ~= false then
         local msgs = { { role = "system", content = systemPrompt } }
         for _, m in ipairs(messages) do msgs[#msgs + 1] = m end
-        requestData = { model = Config.AI.model, messages = msgs, stream = false, options = { temperature = 0.3, num_predict = maxTokens } }
+        requestData = { model = Config.AI.model, messages = msgs, stream = false, keep_alive = -1, options = { temperature = 0.3, num_predict = maxTokens } }
         headers = { ["Content-Type"] = "application/json" }
         apiUrl = (Config.AI.apiUrl or "http://127.0.0.1:11434") .. "/api/chat"
     else
