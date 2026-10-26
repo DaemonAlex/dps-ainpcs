@@ -1183,6 +1183,9 @@ RegisterNUICallback('sendMessage', function(data, cb)
     lastMessageTime = GetGameTimer()
 
     TriggerServerEvent('ai-npcs:server:sendMessage', result, data.payment or 0)
+    -- DPS 2026-10-19 (Damon: mask the wait): the NPC reacts at once while the model thinks
+    local thinker = activeConversation and spawnedNPCs[activeConversation.npcId]
+    if thinker and thinker.entity then PlayNPCGesture(thinker.entity, 'think') end
     cb('ok')
 end)
 
@@ -1219,6 +1222,7 @@ local GESTURE_CLIPS = {
     hello     = 'gesture_hello',
     damn      = 'gesture_damn',
     come_here = 'gesture_come_here_soft',
+    think     = 'gesture_easy_now',   -- DPS 2026-10-19: "hold on" while the reply loads (no voice line)
     -- reactions to what the player said
     laugh     = 'gesture_shrug_soft',
     shocked   = 'gesture_damn',
