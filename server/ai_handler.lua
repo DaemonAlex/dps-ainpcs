@@ -1657,3 +1657,32 @@ function SummarizeConversation(conversation)
         print(("[AI NPCs] summary call failed: %s"):format(tostring(err)))
     end
 end
+
+-- ===========================================================================
+-- Warm-up (DPS 2026-10-29, Damon yes): load the model on the desktop Ollama
+-- when this resource starts, and nudge it every half hour, so the first
+-- player who talks to an NPC after a restart does not pay the cold load
+-- (9 of 11.6 s measured on 10-19). An empty prompt with keep_alive = -1 is
+-- Ollama's documented "load and keep" call; it generates nothing.
+-- ===========================================================================
+local function warmModel(reason)
+    if (Config.AI and Config.AI.provider) ~= "ollama" then return end
+    local base = Config.AI.apiUrl or "http://127.0.0.1:11434"
+    local body = json.encode({ model = Config.AI.model, prompt = "", keep_alive = -1, stream = false })
+    PerformHttpRequest(base .. "/api/generate", function(code, response)
+        if code == 200 then
+            print(("[AI NPCs] model %s warm on %s (%s)"):format(Config.AI.model, base, reason))
+        else
+            print(("[AI NPCs] warm-up failed (%s): HTTP %s from %s"):format(reason, tostring(code), base))
+        end
+    end, "POST", body, { ["Content-Type"] = "application/json" })
+end
+
+CreateThread(function()
+    Wait(5000) -- let the config and the http layer settle
+    warmModel("resource start")
+    while true do
+        Wait(30 * 60 * 1000)
+        warmModel("half-hour nudge")
+    end
+end)
