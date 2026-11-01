@@ -150,11 +150,33 @@ end
 -----------------------------------------------------------
 -- Request Queue with Token Bucket
 -----------------------------------------------------------
+--- Speak a line through dps-voice, when it is running. Stage directions written in
+--- *asterisks* are stripped first: they are there for the eye, and a voice reads
+--- "scratches head" out loud as words. Gesture tags go the same way. If nothing is
+--- left worth saying, nothing is spoken. Never blocks or delays the text.
+function SpeakNPCLine(playerId, npc, text)
+    if not npc or type(text) ~= "string" then return end
+    if GetResourceState("dps-voice") ~= "started" then return end
+
+    local spoken = text:gsub("%*[^%*]*%*", " ")       -- *shrugs*, *clears throat*
+    spoken = spoken:gsub("%[[%a_]+%]", " ")            -- [shrug], [walk]
+    spoken = spoken:gsub("%s+", " "):match("^%s*(.-)%s*$")
+    if spoken == "" then return end
+
+    exports["dps-voice"]:Say({
+        npc          = npc.name,
+        text         = spoken,
+        targets      = playerId,
+        conversation = true,
+    })
+end
+
 function QueueAIRequest(playerId, conversation, playerMessage)
     -- Check if player already has a pending request
     if pendingRequests[playerId] then
         TriggerClientEvent('ai-npcs:client:receiveMessage', playerId,
             "*holds up a finger* Hold on, I'm still thinking...", conversation.npc.id)
+        SpeakNPCLine(playerId, conversation.npc, "Hold on, I'm still thinking.")
         return
     end
 
@@ -511,6 +533,7 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
 
             local fallback = GetFallbackResponse(npc, fallbackReason)
             TriggerClientEvent('ai-npcs:client:receiveMessage', playerId, fallback, npc.id)
+            SpeakNPCLine(playerId, npc, fallback)
 
             -- Log additional debug info for Ollama timeouts
             if provider == "ollama" and Config.Debug and Config.Debug.enabled then
@@ -584,6 +607,17 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
                 aiResponse = aiResponse:gsub("%s*%[[%a_]+%]", "")
                 aiResponse = aiResponse:match("^%s*(.-)%s*$") or aiResponse
 
+                -- A reply that was nothing but a gesture tag, or that the model returned
+                -- empty, strips down to "". Sending that shows no subtitle, gives the
+                -- voice nothing to say, and writes a blank turn into the history that
+                -- makes the next reply worse. Use the NPC's own fallback words instead
+                -- and keep whatever gesture did come through.
+                if aiResponse == "" then
+                    aiResponse = GetFallbackResponse(npc, "parse_error")
+                    print(("[AI NPCs] %s returned no words%s; used a fallback line")
+                        :format(npc.name, gesture and (" (gesture " .. gesture .. " only)") or ""))
+                end
+
                 -- Add AI response to conversation history (without the tag)
                 table.insert(conversation.conversationHistory, {
                     role = "assistant",
@@ -594,7 +628,12 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
                 local isNetworked = Config.Sound and Config.Sound.enableNetworked or false
                 TriggerClientEvent('ai-npcs:client:receiveMessage', playerId, aiResponse, npc.id, isNetworked, gesture)
 
-                -- (L3) ElevenLabs TTS generation removed — conversation is text-only.
+                -- (L3) TTS is back, now through dps-voice:
+                -- Speak it. A conversation is novel text every time, so it uses this
+                -- NPC's free local voice rather than their paid one: nothing caches,
+                -- and a paid voice would be charged per sentence. dps-voice falls back
+                -- to the other free provider, or to silence, and never blocks the reply.
+                SpeakNPCLine(playerId, npc, aiResponse)
 
                 if Config.Debug and Config.Debug.printResponses then
                     print(("[AI NPCs] %s says: %s [gesture=%s]"):format(npc.name, aiResponse:sub(1, 80) .. "...", tostring(gesture)))
@@ -604,12 +643,14 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
                 print("[AI NPCs] Raw response: " .. tostring(response))
                 local fallback = GetFallbackResponse(npc, "parse_error")
                 TriggerClientEvent('ai-npcs:client:receiveMessage', playerId, fallback, npc.id)
+            SpeakNPCLine(playerId, npc, fallback)
             end
         elseif statusCode == 429 then
             -- Rate limited by API
             print("[AI NPCs] API rate limit hit (429)")
             local fallback = GetFallbackResponse(npc, "api_error")
             TriggerClientEvent('ai-npcs:client:receiveMessage', playerId, fallback, npc.id)
+            SpeakNPCLine(playerId, npc, fallback)
         elseif statusCode == 0 or statusCode == nil then
             -- Connection failed - likely Ollama not running or network issue
             print(("[AI NPCs] Connection failed to %s (provider: %s)"):format(apiUrl, provider))
@@ -622,9 +663,11 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
                 print("  4. Model loaded? ollama pull " .. (Config.AI.model or "dolphin-llama3:8b"))
                 local fallback = GetFallbackResponse(npc, "ollama_offline")
                 TriggerClientEvent('ai-npcs:client:receiveMessage', playerId, fallback, npc.id)
+            SpeakNPCLine(playerId, npc, fallback)
             else
                 local fallback = GetFallbackResponse(npc, "connection_error")
                 TriggerClientEvent('ai-npcs:client:receiveMessage', playerId, fallback, npc.id)
+            SpeakNPCLine(playerId, npc, fallback)
             end
         elseif statusCode >= 500 then
             -- Server error
@@ -634,11 +677,13 @@ function GenerateAIResponseInternal(playerId, conversation, playerMessage, onCom
             end
             local fallback = GetFallbackResponse(npc, "server_error")
             TriggerClientEvent('ai-npcs:client:receiveMessage', playerId, fallback, npc.id)
+            SpeakNPCLine(playerId, npc, fallback)
         else
             print(("[AI NPCs] AI API request failed with status: %s (provider: %s)"):format(statusCode, provider))
             print("[AI NPCs] Response: " .. tostring(response))
             local fallback = GetFallbackResponse(npc, "api_error")
             TriggerClientEvent('ai-npcs:client:receiveMessage', playerId, fallback, npc.id)
+            SpeakNPCLine(playerId, npc, fallback)
         end
 
         if onComplete then onComplete() end
@@ -1006,7 +1051,7 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
     -- Reminder about format
     prompt = prompt .. "\n=== RESPONSE GUIDELINES ===\n"
     prompt = prompt .. "- Stay in character, always. If they are a cop, keep your cover.\n"
-    prompt = prompt .. "- One to three sentences. Speak, do not write.\n"
+    prompt = prompt .. "- One or two sentences, under 45 words. Speak, do not write. Never monologue - this is talking, and they are waiting to hear you.\n"
     prompt = prompt .. "- If they have not earned or paid for something, do not hand it over; make them work for it the way this character would.\n"
     prompt = prompt .. "- End your reply with exactly one gesture tag from this list, on its own at the very end: [" .. table.concat(GESTURE_TAGS, "] [") .. "]\n"
     prompt = prompt .. "- React like a person: a joke gets [laugh], something off-colour or shocking gets [shocked] or [grunt], a brush-off gets [wave_off].\n"

@@ -987,8 +987,16 @@ function StartConversation(npcId)
     }
     StartConversationWatch(npcId)
 
-    -- Start conversation on server
-    TriggerServerEvent('ai-npcs:server:startConversation', npcId)
+    -- Start conversation on server. The ped lives on the client, so the server cannot
+    -- see where it is standing - send its real position with the request. Without this
+    -- the server measures us against the NPC's configured home instead, and refuses the
+    -- moment the ped has wandered or been walked a few metres away.
+    local pedCoords
+    if npcInfo and npcInfo.entity and DoesEntityExist(npcInfo.entity) then
+        local c = GetEntityCoords(npcInfo.entity)
+        pedCoords = { x = c.x, y = c.y, z = c.z }
+    end
+    TriggerServerEvent('ai-npcs:server:startConversation', npcId, pedCoords)
 
     -- Open conversation UI
     OpenConversationUI(npcInfo.data)

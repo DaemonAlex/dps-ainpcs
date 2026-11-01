@@ -17,32 +17,39 @@ local QBCore = {
 local factionTrustCache = {}  -- { [citizenid] = { [faction] = data } }
 
 -- Define which NPCs belong to which factions
--- NOTE: IDs must match the 'id' field in Config.NPCs exactly
+-- NOTE: IDs must match the 'id' field in Config.NPCs exactly.
+--
+-- DPS 2026-10-31 (Damon: "fix the faction map and kill roxwood"). This table was half
+-- wired to NPCs that were never built: 15 of 34 memberships named ids that do not exist
+-- in Config.NPCs, so faction reputation was being paid to phantom faces and nothing
+-- errored. 'street' had NO real members at all, which is the faction the street ladder
+-- pays into. Checked against the live 27 ids; every id below is real.
+--   Dropped: triads (neither triads_sandy nor triad_enforcer was ever built - there is
+--     no Triads face in the cast, though triads is still a gang in qbx jobs canon).
+--   Dropped: roxwood - Roxwood is gone.
+--   Gangs are one face each; the extra ranks (dealer, og, lieutenant, prospect) never existed.
+--   Added the 8 faces that belonged to no faction at all, so reputation can reach them.
 local npcFactions = {
-    -- Gangs
-    vagos = {"vagos_contact", "vagos_dealer", "vagos_lieutenant"},
-    ballas = {"ballas_contact", "ballas_og", "ballas_dealer"},
-    families = {"families_contact", "families_og", "grove_dealer"},
-    lost_mc = {"lost_mc_contact", "lost_prospect", "lost_dealer"},
+    -- Gangs (one real face each)
+    vagos = {"vagos_contact"},                          -- El Guapo
+    ballas = {"ballas_contact"},                        -- Purple K
+    families = {"families_contact"},                    -- Big Smoke Jr
+    lost_mc = {"lost_mc_contact"},                      -- Chains
 
     -- Criminal orgs
-    cartel = {"coke_connect_vinewood", "hector_cartel_enforcer", "cartel_boss"},
-    mafia = {"heist_planner_lester", "fence_chamberlain", "arms_dealer_docks"},
-    triads = {"triads_sandy", "triad_enforcer"},
+    cartel = {"coke_connect_vinewood", "mid_level_dealer", "cartel_boss"},   -- Rico, Hector, Don Alejandro
+    mafia = {"heist_planner_lester", "fence_chamberlain", "arms_dealer_docks"}, -- Architect, Charlie, Viktor
 
     -- Legitimate
-    legal = {"career_counselor_cityhall", "realtor_downtown", "pilot_lsia"},
-    medical = {"doc_pillbox"},
-    law = {"lawyer_downtown"},
+    legal = {"career_counselor_cityhall", "realtor_downtown", "pilot_lsia", "mechanic_mentor", "restaurant_owner", "casino_host"},
+    medical = {"doc_pillbox"},                          -- Dr. Hartman
+    law = {"lawyer_downtown"},                          -- Attorney Goldstein
 
     -- Underground network
-    underground = {"informant_yellowjack", "weed_connect_grove", "meth_cook_sandy", "homeless_sage", "bartender_bahama"},
+    underground = {"informant_yellowjack", "weed_connect_grove", "meth_cook_sandy", "homeless_sage", "bartender_bahama", "cleaner"},
 
-    -- Street-level
-    street = {"street_dealer_dmoney", "pawnshop_sal"},
-
-    -- Roxwood
-    roxwood = {"roxwood_pawnshop", "roxwood_bartender"},
+    -- Street-level: the rungs of the street ladder plus the faces that buy what it moves
+    street = {"street_dealer", "pawn_shop_owner", "chop_shop_boss"},         -- D-Money, Sal, Tao
 }
 
 -- Reverse lookup: NPC -> Faction
@@ -62,6 +69,10 @@ local factionRelations = {
     cartel = { vagos = "ally", mafia = "rival", underground = "friendly" },
     mafia = { cartel = "rival", underground = "friendly", legal = "friendly" },
     underground = { families = "friendly", lost_mc = "friendly", mafia = "friendly", cartel = "friendly" },
+    -- DPS 2026-10-31: street is a real faction now (D-Money, Sal, Tao), so it needs a view of
+    -- the others. It sits under everyone: the cartel and the gangs supply it, the mafia uses it,
+    -- the underground drinks with it, and the law is the law.
+    street = { cartel = "friendly", underground = "friendly", mafia = "neutral", vagos = "neutral", ballas = "neutral", families = "neutral", lost_mc = "neutral", law = "enemy" },
 }
 
 -----------------------------------------------------------
