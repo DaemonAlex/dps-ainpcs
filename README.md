@@ -2,6 +2,10 @@
 
 Talking NPCs for Qbox servers: each NPC answers in free text through a language model, remembers players, and trades intel and jobs for trust and cash.
 
+## What it is for
+
+Most NPCs in a city say nothing. Players who want an informant, a fixer or a bartender to talk to need another player or a staff member to play the part. This script fills that gap. Players can walk up to an NPC, type what they want to say, and get an answer that fits who the NPC is and what the NPC knows about them. The NPCs hand out intel and jobs as trust grows, so players have a way into criminal and legal work at any hour, without staff on call.
+
 ## Features
 
 ### Players
@@ -44,6 +48,22 @@ There are no key bindings. All interaction is through ox_target.
 
 Each player has 5 tokens, refilled at 5 per minute. At most 5 AI requests run at once. Requests time out after 30 s (120 s for Ollama). When a request fails, the NPC says a line from `Config.FallbackResponses`.
 
+## On its own, and with other scripts
+
+**On its own.** The hard requirements are ox_lib, ox_target, ox_inventory, oxmysql, qbx_core, dps-badpeds and a language model endpoint. With only those, players can talk to every NPC, build trust, pay for intel, take jobs and get item or cash rewards. NPCs remember past talks, react to the player's job, gang, cash and items, and follow their schedules. NPC lines show as ox_lib notifications. A local Ollama model works, so no paid service is needed.
+
+**With dps-badpeds.** This one is required. Both scripts share one list of named characters. When police arrest one of those characters through dps-badpeds, that NPC is in jail and players cannot talk to them here until the sentence ends. If a player is in the middle of a talk when the arrest happens, the NPC breaks it off. The script only asks dps-badpeds if a character is available.
+
+**With dps-chat.** NPC lines appear as speech bubbles over the NPC's head. Without dps-chat they appear as ox_lib notifications.
+
+**With dps-voice.** NPC lines are spoken aloud as well as shown as text. The text never waits for the voice.
+
+**With a paid police computer (wasabi_mdt).** NPCs know what has been going on in the city. A lawyer, a doctor or a police contact may mention a recent dispatch call or an active warrant. Any NPC may mention a closed incident as something that "was on the news". It is passed on as hearsay, so the NPC hedges and may get a detail wrong. The script only reads three MDT tables (`wsb_mdt_dispatches`, `wsb_mdt_warrants`, `wsb_mdt_incidents`). It never writes to the MDT. If the tables are missing or change in an update, the NPC talks without that news and nothing else breaks.
+
+**With a paid phone (lb-phone).** When an NPC has intel, a job, a debt reminder or a warning for a player, the player gets it as a notification on the phone, from the NPC's name, under Messages. A player who is offline gets it at the next login. The script only fires the `lb-phone:notification` event. It reads and changes nothing in the phone. The same works with `gksphone` (paid), `npwd` and `qb-phone` (free).
+
+**With other scripts that want NPC data.** Other resources can read and change trust, faction standing, rumors, intel and quests through the server exports listed below.
+
 ## Prerequisites
 
 Required (listed in `fxmanifest.lua` `dependencies`):
@@ -64,7 +84,9 @@ An AI model endpoint, one of:
 Optional:
 
 - `dps-chat`: NPC speech shows as head bubbles through `exports["dps-chat"]:ShowBubble`. If `dps-chat` is not started, or the call fails, the client falls back to an ox_lib notification. Long lines are cut to 118 characters for the bubble.
-- `npwd` or `lb-phone`: used to deliver NPC phone notifications when started (`server/systems/notifications.lua`).
+- A phone, one of `lb-phone`, `npwd`, `qb-phone` or `gksphone`: used to deliver NPC phone notifications when started (`server/systems/notifications.lua`). An ox_lib notification is always sent as well.
+- `dps-voice`: when started, NPC lines are also spoken aloud through `exports["dps-voice"]:Say`. Stage directions in asterisks are left out. Without it, lines are text only.
+- `wasabi_mdt`: when its tables exist, NPCs hear about recent police calls, warrants and closed incidents (see "On its own, and with other scripts").
 - Discord webhooks, for `Config.Logs`.
 
 Convars: this resource reads none. The API key is `Config.AI.apiKey` in `config.lua` (see the warning in Installation).
@@ -180,7 +202,7 @@ Patterns: `stationary`, `wander`, `patrol`, `schedule`.
 | Option | Default | Meaning |
 |---|---|---|
 | `includeJob`, `includeJobGrade`, `includeMoney`, `includeItems`, `includeGang`, `includeCriminalRecord` | all `true` | What the NPC may know about the player |
-| `suspiciousJobs` | `police, bcso, sasp, fib, doc, dfw, rpd, rcso, uscg` | Jobs that make NPCs wary. Replace with your job names |
+| `suspiciousJobs` | `police, sheriff, statepolice, ranger, roxwoodpd, paletopd, sandypd, fbi, doj` | Jobs that make NPCs wary. Replace with your job names. The Roxwood departments were removed from DelPerroSands on 31 October 2026, so `roxwoodpd` no longer matches a job there |
 | `specialItems.drugs` | weed, coke, meth, crack, oxy, lean | Item names counted as drugs |
 | `specialItems.weapons` | weapon_pistol, weapon_smg, weapon_rifle | Weapons |
 | `specialItems.crimeTools` | lockpick, thermite, laptop, drill | Crime tools |
@@ -277,3 +299,47 @@ exports['dps-ainpcs']:AddFactionTrust(citizenid, 'vagos', 10)
 - **A job or item reaction never triggers:** the job and item names in `Config.PlayerContext` do not match your server. Edit them.
 - **NPC missing from the map:** NPCs spawn only within `Config.Movement.spawnDistance` of a player, and `schedule` NPCs only at their active hours.
 - **Admin command says "Admin only command":** grant the ACE (step 6) or run it from the server console.
+
+## Recent changes
+
+- **12 November 2026.** README: what it is for, how it works alone and with paid scripts, other DPS scripts. The phone list and the `suspiciousJobs` default now match the code.
+- **31 October 2026.** Faction map fixed: 15 memberships pointed at NPCs that were never built, so reputation went nowhere. Every id is now a real NPC, the `street` faction has real members, and the Roxwood faction is gone. Ladder payoffs can now give money, faction standing and a personal vouch, as well as items. An NPC greets a player once, then stays quiet on the greeting for 15 minutes.
+- **29 October 2026.** The Ollama model is loaded when the resource starts and nudged every 30 minutes, so the first talk after a restart is not slow.
+- **25 October 2026.** Synced with the live server.
+- **24 October 2026.** README: the example `apiUrl` shows the default from the example config.
+- **19 October 2026.** The NPC makes a "hold on" gesture at once while the reply loads. The Ollama model stays loaded between requests.
+- **4 October 2026.** NPC speech shows as head bubbles in the DelPerroSands look. README rewritten with features, prerequisites, install steps and settings.
+- **27 September 2026.** Story engine: NPC memory, written facts per trust tier, the city ledger (what the NPC heard lately) and ladders between NPCs. NPCs know real places near them, follow schedules, use gestures and call out to players who pass. Yellow Jack bar crowd added with marked seats and keep-out points.
+- **11 September 2026.** NPC range check measures against every spot the NPC can stand. The panel reply is parsed as JSON.
+
+## Author
+
+Made by [DaemonAlex](https://github.com/DaemonAlex) for DelPerroSands.
+
+## Other DPS scripts
+
+All of these are made for DelPerroSands and run together on one Qbox server. Each one works on
+its own. The ones marked "pairs with" do more when both are running.
+
+| Script | What it does |
+|---|---|
+| [dps-inventory](https://github.com/DaemonAlex/dps-inventory) | The inventory: ox_inventory with equipment slots, backpacks, armour plates and a self status panel, in the DelPerroSands colours. |
+| [dps-medical](https://github.com/DaemonAlex/dps-medical) | Patient records, illness and diagnostic tests. A companion to wasabi_ambulance. Pairs with dps-inventory: symptoms and diagnoses show on the status panel. |
+| [dps-insurance](https://github.com/DaemonAlex/dps-insurance) | Ties m-Insurance into the MDT, impound, hospital and medical chart. Pairs with dps-medical. |
+| [dps-studio](https://github.com/DaemonAlex/dps-studio) | Build rooms, doors and portals in game from one panel (`/studio`), with owners and managers so staff do not have to support them. |
+| [dps-shops](https://github.com/DaemonAlex/dps-shops) | Shop clerks who greet and react to a robbery, then player-owned shops. |
+| [dps-fleet](https://github.com/DaemonAlex/dps-fleet) | Vehicle browser and workshop on one panel: extras, liveries and mods for emergency vehicles. |
+| [dps-parking](https://github.com/DaemonAlex/dps-parking) | Parking with valet, impound, violations and reserved spots. |
+| [dps-vehiclepersistence](https://github.com/DaemonAlex/dps-vehiclepersistence) | Vehicles stay where they were parked. Pairs with dps-parking. |
+| [dps-towjob](https://github.com/DaemonAlex/dps-towjob) | Queue-based tow job with jg-mechanic integration. |
+| [dps-services](https://github.com/DaemonAlex/dps-services) | Request a tow and follow it live on the lb-phone and lb-tablet. Pairs with dps-towjob. |
+| [dps-autoshops](https://github.com/DaemonAlex/dps-autoshops) | Self-service repair shops when no mechanic is on duty. |
+| [dps-cityworker](https://github.com/DaemonAlex/dps-cityworker) | City infrastructure job and career. |
+| [dps-badpeds](https://github.com/DaemonAlex/dps-badpeds) | Police interaction with NPCs: stops, arrests, intel and jail records. |
+| [dps-gangwars](https://github.com/DaemonAlex/dps-gangwars) | Ambient gang NPCs, territory population and war reinforcements. |
+| [dps-rotations](https://github.com/DaemonAlex/dps-rotations) | Moves dealers, harvests and other spots on a fixed schedule. |
+| [dps-trains](https://github.com/DaemonAlex/dps-trains) | The train system. Pairs with dps-trains-stock, dps-traintools and dps-transitapp. |
+| [dps-transitapp](https://github.com/DaemonAlex/dps-transitapp) | Live train arrival boards on the lb-phone. |
+| [dps-faceplant](https://github.com/DaemonAlex/dps-faceplant) | City help, reports and staff tools on the lb-phone and lb-tablet. |
+| [dps-chat](https://github.com/DaemonAlex/dps-chat) | A command box for voice-only servers. No chat feed. |
+| [dps-filmmode](https://github.com/DaemonAlex/dps-filmmode) | One key hides every HUD layer and gives a smooth free camera for recording. |
