@@ -117,6 +117,67 @@ Convars: this resource reads none. The API key is `Config.AI.apiKey` in `config.
 
 Tables created: `ai_npc_trust`, `ai_npc_quests`, `ai_npc_intel_cooldowns`, `ai_npc_referrals`, `ai_npc_debts`, `ai_npc_memories`, `ai_npc_ladders`, `ai_npc_conversations`, `ai_npc_faction_trust`, `ai_npc_rumors`, `ai_npc_intel`, `ai_npc_intel_purchases`, `ai_npc_notifications`, `ai_npc_coop_quests`, `ai_npc_coop_members`, `ai_npc_relationships`, `ai_npc_player_actions`, `ai_npc_interrogations`.
 
+## Running a local model
+
+You do not need a paid AI service. The default setup talks to a model running on your own
+machine, so there is no cost per message, no key on the game server, and nothing a player says
+leaves your network.
+
+### Your options
+
+| Option | `provider` | `apiUrl` | Notes |
+|---|---|---|---|
+| **Ollama** (default) | `"ollama"` | `http://127.0.0.1:11434` | The simplest. Install Ollama, run `ollama pull <model>`, and it serves on that address. Uses Ollama's own `/api/chat`, which is the faster path and the only one that applies the context settings below. |
+| **Ollama on another machine** | `"ollama"` | `http://<that machine>:11434` | Run the model on a PC with a good graphics card and point the game server at it. Start Ollama there with `OLLAMA_HOST=0.0.0.0`, and only open that port to the game server. |
+| **Any OpenAI-compatible local server** | `"openai"` | The full chat-completions URL, for example `http://127.0.0.1:1234/v1/chat/completions` | LM Studio, llama.cpp's server, vLLM, text-generation-webui and others speak this format. `apiKey` can stay empty. Set the context size in that program, because the context settings below are not sent on this path. |
+| **A cloud service** | `"openai"` or `"anthropic"` | The service's URL | Works, costs money per message, and needs a key. See the warning in Installation about keys in `config.lua`. |
+
+Set `ollamaNativeApi = false` to make the Ollama provider use the OpenAI-compatible format instead.
+
+### Choosing a model
+
+- The example config uses `dolphin-llama3:8b`. It fits in 8 GB of graphics memory.
+- Any chat model Ollama can run will work. Change `Config.AI.model` to its name.
+- Smaller models answer faster and tend to repeat themselves. `repeatPenalty` is there for that.
+- Larger models hold character better and need more graphics memory. If replies take longer than
+  a few seconds, players walk away.
+
+### Settings that control context
+
+"Context" is everything the model reads before it answers: who the NPC is, what it remembers
+about this player, what it has heard lately, who the player is, and the talk so far. If the
+context window is too small, the model drops the start of that text without any error, and the
+NPC forgets who it is.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `Config.AI.contextLength` | `8192` | The size of the context window, sent to Ollama as `num_ctx`. Ollama's own default is 4096, which is too small for these prompts. Raise it if you raise the memory settings below. It costs graphics memory. |
+| `Config.AI.maxTokens` | `320` | The longest reply the model may give, sent as `num_predict`. Lower it for shorter, faster answers. |
+| `Config.AI.temperature` | `0.9` | How varied replies are. Lower is steadier, higher is more inventive. |
+| `Config.AI.repeatPenalty` | `1.15` | Discourages the model from looping. Small models need it. |
+| `Config.Memory.maxLines` | `5` | How many memories of this player go into the prompt. |
+| `Config.Memory.talkSummary` | `true` | After a talk, one extra short model call writes a one-line memory of it. Turn it off to halve the model calls. |
+| `Config.Memory.summaryMaxTokens` | `60` | The longest that memory line may be. |
+| `Config.Ledger.maxLines` | `6` | How many lines of "what you heard lately" from the city go into the prompt. |
+| `Config.Ledger.hours` | `48` | How far back those lines reach. |
+| `Config.Interaction.maxConversationLength` | `15` | The most exchanges in one talk. The whole talk is resent each time, so long talks fill the context. |
+| `Config.PlayerContext.*` | on | Which facts about the player the NPC is told: job, rank, cash, items, gang, record. Each one adds a little to the prompt. |
+
+A rough rule: if you double the memory and ledger lines, double `contextLength` too.
+
+### Keeping a local model fast
+
+- **The model stays loaded.** Requests are sent with `keep_alive = -1`, so Ollama never unloads
+  it. A cold load was measured at 9 of 11.6 seconds on DelPerroSands, which is the whole wait.
+- **It is warmed at start.** When the resource starts it asks the model for one reply, so the
+  first player does not pay for the load. The console prints whether that worked.
+- **Local requests get longer to answer.** 120 seconds for Ollama, 30 seconds for cloud services.
+- **A server-wide budget.** `Config.AI.globalBudget` caps tokens per minute across all players
+  (`maxTokensPerMinute`, 2000 by default). Turn it on for a local model, so a busy night cannot
+  queue more than the graphics card can serve.
+- **Per player:** 5 requests, refilled at 5 per minute, and at most 5 requests running at once.
+- **Check it:** `/ainpc provider` shows the current settings and `/ainpc test` sends a test request.
+
 ## Configuration
 
 Main file: `config.lua`. Jobs, items and gangs named in it must match your server.
@@ -302,6 +363,7 @@ exports['dps-ainpcs']:AddFactionTrust(citizenid, 'vagos', 10)
 
 ## Recent changes
 
+- **12 November 2026.** README: a section on running a local model and the settings that control context.
 - **12 November 2026.** README: what it is for, how it works alone and with paid scripts, other DPS scripts. The phone list and the `suspiciousJobs` default now match the code.
 - **31 October 2026.** Faction map fixed: 15 memberships pointed at NPCs that were never built, so reputation went nowhere. Every id is now a real NPC, the `street` faction has real members, and the Roxwood faction is gone. Ladder payoffs can now give money, faction standing and a personal vouch, as well as items. An NPC greets a player once, then stays quiet on the greeting for 15 minutes.
 - **29 October 2026.** The Ollama model is loaded when the resource starts and nudged every 30 minutes, so the first talk after a restart is not slow.
