@@ -44,14 +44,58 @@ function GetLadderRow(citizenid, ladder, region)
     return rows and rows[1] or nil
 end
 
-local function runPayoff(src, payoff)
+-- A rung payoff. DPS 2026-10-31 (Damon: "nothing here needs the engine touched, apart from
+-- teaching payoffs to pay in something other than items"). Four kinds now, and a payoff may
+-- carry several at once - items for the tools, money for the earner, standing for the status
+-- ("the payoff is increased reputation that escalates your priority and status among the
+-- NPCs"), and a word that opens a door. Standing goes through the existing faction trust
+-- system rather than a parallel one, so it reaches every face in that faction.
+local function runPayoff(src, payoff, citizenid, npcId)
     if not payoff then return end
-    if payoff.kind == "items" then
-        for _, it in ipairs(payoff.items or {}) do
-            pcall(function() exports.ox_inventory:AddItem(src, it.name, it.amount or 1) end)
+    local kinds = payoff.kind and { payoff } or payoff   -- one payoff, or a list of them
+    if payoff.kind then kinds = { payoff } end
+
+    for _, p in ipairs(kinds) do
+        if type(p) ~= "table" or not p.kind then goto continue end
+
+        if p.kind == "items" then
+            for _, it in ipairs(p.items or {}) do
+                pcall(function() exports.ox_inventory:AddItem(src, it.name, it.amount or 1) end)
+            end
+
+        elseif p.kind == "money" then
+            local amount = tonumber(p.amount) or 0
+            if amount > 0 then
+                local Player = exports.qbx_core:GetPlayer(src)
+                if Player then
+                    Player.Functions.AddMoney(p.account or 'cash', amount, 'ai-npc-ladder:' .. tostring(npcId))
+                end
+            end
+
+        elseif p.kind == "standing" then
+            -- Faction reputation. Reaches every NPC in the faction, which is the point:
+            -- finish the street ladder and the whole street knows you, not just the last face.
+            for faction, delta in pairs(p.factions or {}) do
+                local d = tonumber(delta) or 0
+                if d ~= 0 then
+                    pcall(function()
+                        exports['dps-ainpcs']:AddFactionTrust(citizenid, faction, d, 'ladder:' .. tostring(npcId))
+                    end)
+                end
+            end
+
+        elseif p.kind == "word" then
+            -- No goods, no money: the face simply vouches for the player from here on. The line
+            -- is written into the NPC's memory so it colours every later conversation.
+            if RememberEngine and p.line then
+                RememberEngine(citizenid, npcId, p.line, 'positive')
+            end
+
+        elseif Config.Debug and Config.Debug.enabled then
+            print(("[AI NPCs] payoff kind %s not wired yet"):format(tostring(p.kind)))
         end
-    elseif Config.Debug and Config.Debug.enabled then
-        print(("[AI NPCs] payoff kind %s not wired yet"):format(tostring(payoff.kind)))
+
+        ::continue::
     end
 end
 
@@ -85,7 +129,7 @@ function AdvanceLadder(src, citizenid, npcId, questId)
     ]], { citizenid, lk, rk, math.min(idx + 1, total), status })
 
     if status == "done" then
-        runPayoff(src, rung.payoff)
+        runPayoff(src, rung.payoff, citizenid, npcId)
         RememberEngine(citizenid, npcId, "They went all the way with you. You owe them nothing now, and they know it.", 'positive')
         return "done"
     end

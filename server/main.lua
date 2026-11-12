@@ -12,6 +12,10 @@ local QBCore = {
 
 -- Data stores (cache - synced with database)
 local activeConversations = {}
+-- Who has been greeted by whom, and when. Keyed by citizenid so it survives a
+-- reconnect: walking back up to someone five minutes later is not a first meeting.
+local greetedAt = {}
+local GREET_AGAIN_AFTER = 900  -- seconds (15 min) before an NPC greets you fresh again
 local playerTrustCache = {}   -- In-memory cache, synced with DB
 local intelCooldowns = {}     -- { [identifier] = { [topic] = lastAccessTime } }
 -- (L3) audioCache/cacheSize removed — ElevenLabs TTS is retired.
@@ -141,7 +145,19 @@ end
 -----------------------------------------------------------
 local INTERACTION_RANGE = 5.0  -- Max distance for interactions
 
-function IsPlayerNearNPC(playerId, npcId)
+--- How far the ped itself may legitimately have drifted from any of its configured
+--- spots. Wandering, a scenario walk and the [walk] gesture all move it, so this is
+--- deliberately generous: it is here to reject a claim of standing beside an NPC who is
+--- really across the map, not to police a few steps.
+local PED_DRIFT_ALLOWANCE = 100.0
+
+--- pedCoords, when the caller can supply it, is where the client says the ped is really
+--- standing. The ped is spawned client-side, so without it the server can only measure
+--- the player against the NPC's CONFIGURED spots - which refuses perfectly good
+--- conversations the moment the ped has walked a few metres from home. With it we check
+--- the real distance between player and ped, then sanity-check the ped against those
+--- spots, which keeps the anti-cheat intent without the false rejections.
+function IsPlayerNearNPC(playerId, npcId, pedCoords)
     local Player = QBCore.Functions.GetPlayer(playerId)
     if not Player then return false end
 
@@ -179,6 +195,27 @@ function IsPlayerNearNPC(playerId, npcId)
     end
 
     local playerVec = vector3(playerCoords.x, playerCoords.y, playerCoords.z)
+
+    --- Preferred path: the caller told us where the ped actually is.
+    local pedVec
+    if pedCoords then
+        local x, y, z = tonumber(pedCoords.x), tonumber(pedCoords.y), tonumber(pedCoords.z)
+        if x and y and z then pedVec = vector3(x, y, z) end
+    end
+
+    if pedVec then
+        -- Standing next to the ped is the thing we actually care about.
+        if #(playerVec - pedVec) > INTERACTION_RANGE then return false end
+        -- And the ped has to be somewhere it could plausibly have got to.
+        for _, spot in ipairs(spots) do
+            if spot and #(pedVec - vector3(spot.x, spot.y, spot.z)) <= (allowed + PED_DRIFT_ALLOWANCE) then
+                return true
+            end
+        end
+        return false
+    end
+
+    --- Fallback for callers that cannot say where the ped is: the old, stricter test.
     for _, spot in ipairs(spots) do
         if spot and #(playerVec - vector3(spot.x, spot.y, spot.z)) <= allowed then
             return true
@@ -675,7 +712,7 @@ end
 -----------------------------------------------------------
 -- CONVERSATION MANAGEMENT
 -----------------------------------------------------------
-RegisterNetEvent('ai-npcs:server:startConversation', function(npcId)
+RegisterNetEvent('ai-npcs:server:startConversation', function(npcId, pedCoords)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return end
@@ -683,7 +720,7 @@ RegisterNetEvent('ai-npcs:server:startConversation', function(npcId)
     -- H1: server-authoritative proximity check. The client target has a range,
     -- but a crafted TriggerServerEvent could open a conversation (and farm trust)
     -- from anywhere. Reject if the player isn't actually near the NPC.
-    if not IsPlayerNearNPC(src, npcId) then
+    if not IsPlayerNearNPC(src, npcId, pedCoords) then
         TriggerClientEvent('ox_lib:notify', src, {
             title = 'Too Far',
             description = 'You are not close enough to talk to them',
@@ -763,18 +800,37 @@ RegisterNetEvent('ai-npcs:server:startConversation', function(npcId)
     ]], { identifier, npcId }) or 0
     local greeting = BuildContextualGreeting(npc, playerContext, trustLevel, talkCount)
 
+    -- GREETED ONCE. A conversation can end and restart easily - walking a step away,
+    -- closing the panel, clicking again - and each restart used to produce a fresh
+    -- greeting. Damon, 31 Oct: "I only need to be greeted once but he has now greeted
+    -- me 3x". Within the window below the panel simply opens and he carries on talking,
+    -- which is also how a real conversation resumes.
+    greetedAt[identifier] = greetedAt[identifier] or {}
+    local lastGreet = greetedAt[identifier][npcId]
+    local greetedRecently = lastGreet and (os.time() - lastGreet) < GREET_AGAIN_AFTER
+    greetedAt[identifier][npcId] = os.time()
+
     -- Real-people pass: the opening line comes from the model with memory, situation and
     -- facts in front of it, so a face that knows you greets you like it. Static line is the
     -- fallback when the model is down or slow.
     local conversation = activeConversations[src]
     local useModel = Config.Interaction.modelGreeting and RequestModelText and BuildContextualSystemPrompt and conversation
-    if useModel then
+    if greetedRecently then
+        -- Greeted already. The panel just opens and the conversation carries on.
+        if Config.Debug and Config.Debug.enabled then
+            print(("[AI NPCs] %s skipped the greeting: already greeted this player"):format(npc.name))
+        end
+    elseif useModel then
         local sent = false
         local function deliver(line, gesture)
             if sent or activeConversations[src] ~= conversation then return end
             sent = true
             table.insert(conversation.conversationHistory, { role = "assistant", content = line })
             TriggerClientEvent('ai-npcs:client:receiveMessage', src, line, npc.id, false, gesture)
+            -- The greeting is the first thing anyone hears from this character, and the
+            -- same few lines come round again and again, so they cache after the first
+            -- play and are then instant and free.
+            SpeakNPCLine(src, npc, line)
         end
         local ok = pcall(function()
             local systemPrompt = BuildContextualSystemPrompt(npc, playerContext, conversation)
@@ -802,6 +858,7 @@ RegisterNetEvent('ai-npcs:server:startConversation', function(npcId)
         SetTimeout(6000, function() deliver(greeting) end)
     else
         TriggerClientEvent('ai-npcs:client:receiveMessage', src, greeting, npc.id)
+        SpeakNPCLine(src, npc, greeting)
     end
 
     -- Add trust for visiting (H1: rate-limited per NPC per player so it can't
