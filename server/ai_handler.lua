@@ -859,6 +859,14 @@ function BuildContextualSystemPrompt(npc, playerContext, conversation)
         end
     end
 
+    -- External NPCs (shop clerks and the like): live facts from the resource that owns the ped.
+    if npc.external and ExternalNPCContext then
+        local live = ExternalNPCContext(npc, conversation and conversation.playerId)
+        if live then
+            prompt = prompt .. "=== RIGHT NOW (true at this moment; use it, never contradict it) ===\n" .. live .. "\n\n"
+        end
+    end
+
     -- Real-people pass: everyday questions anyone in the city can answer
     if BuildBasicsContext then
         local ok, basics = pcall(BuildBasicsContext, npc)

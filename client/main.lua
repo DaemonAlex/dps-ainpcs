@@ -396,6 +396,17 @@ function CrowdPose(entity, npcData, spot, trySit, markedSeat)
 end
 
 function AddNPCTarget(npc, npcData)
+    if npcData.external then  -- a shop clerk or similar: talking and paying only, no quest board
+        exports.ox_target:addLocalEntity(npc, {
+            { name = "talk_to_" .. npcData.id, label = "Talk to " .. npcData.name, icon = "fas fa-comments",
+              distance = Config.Interaction.distance, onSelect = function() StartConversation(npcData.id) end },
+            { name = "pay_" .. npcData.id, label = "Offer Payment", icon = "fas fa-money-bill-wave",
+              distance = Config.Interaction.distance,
+              canInteract = function() return activeConversation and activeConversation.npcId == npcData.id end,
+              onSelect = function() ShowPaymentMenu(npcData.id) end },
+        })
+        return
+    end
     exports.ox_target:addLocalEntity(npc, {
         {
             name = "talk_to_" .. npcData.id,
@@ -603,6 +614,10 @@ function StartMovementSystem()
             for npcId, npcInfo in pairs(spawnedNPCs) do
                 local npcData = npcInfo.data
                 local entity = npcInfo.entity
+                if npcInfo.external then  -- the owning resource moves, spawns and deletes it
+                    if not DoesEntityExist(entity) then spawnedNPCs[npcId] = nil end
+                    goto continue
+                end
 
                 if not DoesEntityExist(entity) then
                     -- Entity was culled/streamed out — clean up blip and respawn later
@@ -1025,7 +1040,11 @@ function EndConversation(reason)
         local ent, data = npcInfo.entity, npcInfo.data
         SetTimeout(600, function()
             if DoesEntityExist(ent) and not npcInfo.inConversation then
-                ApplyNPCScenario(ent, data)
+                if npcInfo.external then
+                    TriggerEvent('dps-ainpcs:externalReleased', data.id, ent)  -- the owner puts its ped back to work
+                else
+                    ApplyNPCScenario(ent, data)
+                end
             end
         end)
 
@@ -1731,3 +1750,41 @@ end
 -- Export for external use
 exports('ResolveLocation', ResolveLocation)
 exports('PlayAudioAtLocation', PlayAudioAtLocation)
+
+-----------------------------------------------------------
+-- EXTERNAL NPCs: peds another resource spawns (dps-shops clerks). Registered on the server with
+-- RegisterExternalNPC; the owner attaches its ped here so players can talk to it.
+-----------------------------------------------------------
+local function externalDef(id)
+    for _, d in ipairs(GlobalState['dps-ainpcs:external'] or {}) do
+        if d.id == id then return d end
+    end
+    return nil
+end
+
+exports('AttachExternalNPC', function(id, entity)
+    local d = externalDef(id)
+    if not d or not entity or not DoesEntityExist(entity) then return false end
+    local cur = spawnedNPCs[id]
+    if cur and cur.entity == entity then return true end
+    if cur and cur.external and DoesEntityExist(cur.entity) then
+        exports.ox_target:removeLocalEntity(cur.entity, { 'talk_to_' .. id, 'pay_' .. id })
+    end
+    spawnedNPCs[id] = { entity = entity, data = d, external = true }
+    AddNPCTarget(entity, d)
+    return true
+end)
+
+exports('DetachExternalNPC', function(id)
+    local cur = spawnedNPCs[id]
+    if not cur or not cur.external then return end
+    if activeConversation and activeConversation.npcId == id then EndConversation('They stepped away.') end
+    if DoesEntityExist(cur.entity) then
+        exports.ox_target:removeLocalEntity(cur.entity, { 'talk_to_' .. id, 'pay_' .. id })
+    end
+    spawnedNPCs[id] = nil
+end)
+
+exports('IsTalking', function(id)
+    return activeConversation ~= nil and (id == nil or activeConversation.npcId == id)
+end)

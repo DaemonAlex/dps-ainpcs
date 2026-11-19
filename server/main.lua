@@ -565,6 +565,11 @@ function GetNPCById(npcId)
         end
     end
 
+    -- NPCs registered by another resource (RegisterExternalNPC)
+    if ExternalNPCs and ExternalNPCs[npcId] then
+        return ExternalNPCs[npcId]
+    end
+
     -- Then check shared character pool
     if SharedCharacters and SharedCharacters.pool then
         local sharedChar = SharedCharacters.GetById(npcId)
@@ -782,6 +787,7 @@ RegisterNetEvent('ai-npcs:server:startConversation', function(npcId, pedCoords)
 
     -- Initialize conversation
     activeConversations[src] = {
+        playerId = src,   -- external NPCs ask their owner for facts about this player
         npcId = npcId,
         npc = npc,
         messageCount = 0,

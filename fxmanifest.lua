@@ -23,6 +23,7 @@ server_scripts {
     'server/config_secrets.lua',  -- Server-only API keys (not sent to clients)
     'data/places.lua',            -- DPS 2026-09-27: real places a local NPC knows
     'server/main.lua',
+    'server/systems/external.lua', -- NPCs another resource spawns (shop clerks), see RegisterExternalNPC
     'server/systems/memory.lua',  -- mold engine: what the NPC remembers about a character
     'server/systems/ledger.lua',  -- mold engine: what the NPC heard lately (city records as hearsay)
     'server/systems/facts.lua',   -- mold engine: written facts per trust tier
