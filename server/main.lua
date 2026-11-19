@@ -1006,15 +1006,25 @@ RegisterNetEvent('ai-npcs:server:sendMessage', function(message, paymentOffer)
     GenerateAIResponse(src, conversation, message)
 end)
 
+TalkTrustAt = TalkTrustAt or {}   -- "citizenid:npcId" -> os.time() of the last trust earned by talking
+
 RegisterNetEvent('ai-npcs:server:endConversation', function()
     local src = source
     local conversation = activeConversations[src]
 
     if conversation then
         -- Add trust for completing conversation
+        -- Once per NPC per player in a while: ending a talk used to give trust every time, so a script could
+        -- open, send three lines and close in a loop and reach full trust in minutes.
         if Config.Trust.enabled and conversation.messageCount >= 3 then
-            AddPlayerTrust(conversation.identifier, conversation.npc.trustCategory,
-                conversation.npcId, Config.Trust.earnRates.conversation)
+            local key = tostring(conversation.identifier) .. ':' .. tostring(conversation.npcId)
+            local now = os.time()
+            local gap = (Config.Trust.conversationCooldownMinutes or 30) * 60
+            if not TalkTrustAt[key] or now - TalkTrustAt[key] >= gap then
+                TalkTrustAt[key] = now
+                AddPlayerTrust(conversation.identifier, conversation.npc.trustCategory,
+                    conversation.npcId, Config.Trust.earnRates.conversation)
+            end
         end
 
         -- Flush trust updates immediately for this player

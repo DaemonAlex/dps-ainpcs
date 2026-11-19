@@ -122,10 +122,10 @@ local function getOfferableQuests(src, npcId)
 
     -- Completed quests for this player (for oneTime gating).
     local completedRows = MySQL.query.await([[
-        SELECT quest_id FROM ai_npc_quests WHERE citizenid = ? AND status = 'completed'
+        SELECT quest_id, UNIX_TIMESTAMP(completed_at) AS t FROM ai_npc_quests WHERE citizenid = ? AND status = 'completed'
     ]], {citizenid}) or {}
     local completed = {}
-    for _, r in ipairs(completedRows) do completed[r.quest_id] = true end
+    for _, r in ipairs(completedRows) do completed[r.quest_id] = tonumber(r.t) or os.time() end
 
     local offerable = {}
     for _, quest in ipairs(Config.Quests[setKey]) do
@@ -137,6 +137,8 @@ local function getOfferableQuests(src, npcId)
             ok = false
         end
         if ok and quest.oneTime and completed[quest.id] then ok = false end
+        if ok and not QuestCheckable(quest) then ok = false end
+        if ok and QuestCooldownLeft(quest, completed[quest.id]) > 0 then ok = false end
 
         -- Don't re-offer a quest that's currently active.
         if ok then
@@ -187,6 +189,18 @@ RegisterNetEvent('ai-npcs:server:acceptQuest', function(npcId, questId)
         if q.id == questId then quest = q break end
     end
     if not quest then return end
+    if not QuestCheckable(quest) then
+        TriggerClientEvent('ox_lib:notify', src, { title = 'Not Now', description = 'They have nothing like that for you right now.', type = 'error' })
+        return
+    end
+    local doneAt = MySQL.scalar.await([[
+        SELECT UNIX_TIMESTAMP(completed_at) FROM ai_npc_quests
+        WHERE citizenid = ? AND npc_id = ? AND quest_id = ? AND status = 'completed'
+    ]], {citizenid, npcId, questId})
+    if QuestCooldownLeft(quest, tonumber(doneAt)) > 0 then
+        TriggerClientEvent('ox_lib:notify', src, { title = 'Not Yet', description = 'Come back later for that one.', type = 'error' })
+        return
+    end
 
     -- Re-validate gates server-side.
     local trust = GetPlayerTrust(citizenid, npc.trustCategory, npcId)
@@ -250,6 +264,37 @@ local function firstIncomplete(progress)
         if not progress[i].done then return i end
     end
     return nil
+end
+
+-- DPS 2026-11-19: a quest is only offered when the server can check every step of it (a place to be at, or an
+-- item to hold). A step with neither used to pass for anyone standing next to the quest giver, so "Ask About Work"
+-- then "Active Jobs" paid the full reward in under a minute, again and again. Config.QuestRules can change this.
+local RULES = Config.QuestRules or {}
+if RULES.allowUnverified == nil then RULES.allowUnverified = false end
+RULES.defaultCooldownMinutes = RULES.defaultCooldownMinutes or 120
+
+local ITEM_STEP = { pickup = true, collect = true, retrieve = true, deliver = true }
+local function stepCheckable(obj)
+    if obj.coords then return true end
+    if obj.type == 'wait' and obj.duration then return true end
+    return ITEM_STEP[obj.type] == true and obj.item ~= nil
+end
+
+function QuestCheckable(quest)
+    if RULES.allowUnverified then return true end
+    if type(quest.objectives) ~= 'table' or #quest.objectives == 0 then return false end
+    for _, obj in ipairs(quest.objectives) do
+        if not stepCheckable(obj) then return false end
+    end
+    return true
+end
+
+-- Minutes before the same player may take the same quest again (the quest's own `cooldown`, else the default).
+function QuestCooldownLeft(quest, completedAt, now)
+    if not completedAt then return 0 end
+    local minutes = tonumber(quest.cooldown) or RULES.defaultCooldownMinutes
+    local left = completedAt + minutes * 60 - (now or os.time())
+    return left > 0 and left or 0
 end
 
 -- Validate a single objective server-side. Returns ok, consumedItem(bool).
@@ -317,6 +362,12 @@ RegisterNetEvent('ai-npcs:server:reportObjective', function(questId)
     -- Locate the quest definition + owning NPC.
     local quest, setKey = GetQuestById(questId)
     if not quest then return end
+    if not QuestCheckable(quest) then
+        -- a quest taken before this rule: it cannot be finished by standing still any more
+        TriggerClientEvent('ox_lib:notify', src, { title = 'Job Off', description = 'That job fell through. Ask about work again.', type = 'error' })
+        MySQL.update("UPDATE ai_npc_quests SET status = 'failed' WHERE citizenid = ? AND quest_id = ? AND status IN ('accepted','in_progress')", {citizenid, questId})
+        return
+    end
 
     local row = MySQL.single.await([[
         SELECT * FROM ai_npc_quests
