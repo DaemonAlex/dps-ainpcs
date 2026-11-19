@@ -62,6 +62,8 @@ Each player has 5 tokens, refilled at 5 per minute. At most 5 AI requests run at
 
 **With a paid phone (lb-phone).** When an NPC has intel, a job, a debt reminder or a warning for a player, the player gets it as a notification on the phone, from the NPC's name, under Messages. A player who is offline gets it at the next login. The script only fires the `lb-phone:notification` event. It reads and changes nothing in the phone. The same works with `gksphone` (paid), `npwd` and `qb-phone` (free).
 
+**With dps-shops.** Shop clerks become talking NPCs. dps-shops spawns and moves its own clerks; this resource does the talking with its usual model, voice, memory and limits, and asks dps-shops before each reply what is true right now (what the store sells and at what price, a robbery within the hour, a mask or a gun on the customer, past trouble with this person). See External NPCs below.
+
 **With other scripts that want NPC data.** Other resources can read and change trust, faction standing, rumors, intel and quests through the server exports listed below.
 
 ## Prerequisites
@@ -361,7 +363,48 @@ exports['dps-ainpcs']:AddFactionTrust(citizenid, 'vagos', 10)
 - **NPC missing from the map:** NPCs spawn only within `Config.Movement.spawnDistance` of a player, and `schedule` NPCs only at their active hours.
 - **Admin command says "Admin only command":** grant the ACE (step 6) or run it from the server console.
 
+## External NPCs (for other resources)
+
+A resource that spawns its own peds (dps-shops clerks, for example) can make them talk through this
+one without copying any AI settings. Everything about talking stays here: the model, voice, memory,
+trust and rate limits.
+
+Server, once the character exists:
+
+```lua
+exports['dps-ainpcs']:RegisterExternalNPC({
+    id = 'shopclerk_sandy_247',            -- never the id of a configured NPC
+    name = 'Raj',
+    homeLocation = vector4(x, y, z, h),    -- where the ped stands, for the distance check
+    systemPrompt = 'Your name is Raj. You work the till at ...',
+    voice = 'male_street',                 -- a Config.Voices key, or a voice id
+    voiceSamples = { "You buying that or just holding it?" },
+    calibration = 'How big your reactions are ...',
+    contextExport = { resource = 'dps-shops', name = 'ClerkContext' },   -- optional live facts
+})
+```
+
+`contextExport` is called before each reply as `exports[resource][name](npcId, playerSource)` and
+returns plain lines of fact. They go into the prompt under "RIGHT NOW", and the NPC is told never
+to contradict them. `UnregisterExternalNPC(id)` removes one, and everything a resource registered
+goes away when that resource stops.
+
+Client, on every client that can see the ped:
+
+- `AttachExternalNPC(id, entity)` adds **Talk to** and **Offer Payment** on that ped. The owner keeps
+  spawning, moving and deleting it; this resource never touches its position.
+- `DetachExternalNPC(id)` takes them off again (and ends a talk in progress).
+- `IsTalking([id])` says whether this player is in a conversation (with that NPC).
+
+When a talk ends, the client event `dps-ainpcs:externalReleased` (`npcId`, `entity`) fires, so the
+owner can put its ped back to work.
+
 ## Recent changes
+
+- **19 November 2026.** External NPCs: another resource can register a talking NPC whose ped it
+  spawns itself, attach that ped on each client, and feed live facts into every reply
+  (`RegisterExternalNPC`, `UnregisterExternalNPC`, `AttachExternalNPC`, `DetachExternalNPC`,
+  `IsTalking`). dps-shops uses it for its clerks.
 
 - **12 November 2026.** README: a section on running a local model and the settings that control context.
 - **12 November 2026.** README: what it is for, how it works alone and with paid scripts, other DPS scripts. The phone list and the `suspiciousJobs` default now match the code.
