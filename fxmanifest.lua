@@ -4,7 +4,7 @@ game 'gta5'
 name 'dps-ainpcs'
 author 'DaemonAlex'
 description 'AI-powered NPC conversation system with trust, quests, and intel'
-version '2.6.0'  -- qbx port + functional quest engine
+version '2.6.1'  -- qbx port + functional quest engine
 
 shared_scripts {
     '@ox_lib/init.lua',
