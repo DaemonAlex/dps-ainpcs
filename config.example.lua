@@ -1873,9 +1873,9 @@ Keep responses charming and under 80 words.]]
         name = "Crazy Earl",
         model = "a_m_m_tramp_01",
         blip = nil,
-        homeLocation = vector4(192.85, -935.69, 30.69, 140.0),
+        homeLocation = vector4(212.60, -807.60, 30.80, 160.0),  -- by the Legion Square garage: the old spot is a lake on the new map
         movement = {
-            pattern = "wander",
+            pattern = "stationary",
             locations = {}
         },
         role = "street_sage",
