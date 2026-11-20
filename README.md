@@ -403,6 +403,11 @@ owner can put its ped back to work.
 
 ## Recent changes
 
+- **20 November 2026 (2.7.0).** NPC spots: staff type `/npcspots` to see every AI NPC, jump to any of
+  its spots, and put that spot where they stand. The new place is saved in `dps_ainpc_spots`, laid over
+  `config.lua` at start and sent to every player, so no restart is needed. NPCs standing in a rebuilt
+  part of the map are marked CHECK. Crazy Earl was in the new Legion Square lake; he now stands by the
+  Legion Square garage.
 - **19 November 2026.** External NPCs: another resource can register a talking NPC whose ped it
   spawns itself, attach that ped on each client, and feed live facts into every reply
   (`RegisterExternalNPC`, `UnregisterExternalNPC`, `AttachExternalNPC`, `DetachExternalNPC`,

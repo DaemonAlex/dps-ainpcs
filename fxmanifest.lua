@@ -4,7 +4,7 @@ game 'gta5'
 name 'dps-ainpcs'
 author 'DaemonAlex'
 description 'AI-powered NPC conversation system with trust, quests, and intel'
-version '2.6.1'  -- qbx port + functional quest engine
+version '2.7.0'  -- qbx port + functional quest engine
 
 shared_scripts {
     '@ox_lib/init.lua',
@@ -15,7 +15,8 @@ shared_scripts {
 }
 
 client_scripts {
-    'client/main.lua'
+    'client/main.lua',
+    'client/spots.lua'            -- staff-set NPC spots laid over config.lua, and the /npcspots menu
 }
 
 server_scripts {
@@ -23,6 +24,7 @@ server_scripts {
     'server/config_secrets.lua',  -- Server-only API keys (not sent to clients)
     'data/places.lua',            -- DPS 2026-09-27: real places a local NPC knows
     'server/main.lua',
+    'server/systems/spots.lua',    -- staff-set NPC spots (database), laid over config.lua
     'server/systems/external.lua', -- NPCs another resource spawns (shop clerks), see RegisterExternalNPC
     'server/systems/memory.lua',  -- mold engine: what the NPC remembers about a character
     'server/systems/ledger.lua',  -- mold engine: what the NPC heard lately (city records as hearsay)
